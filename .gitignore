@@ -2,6 +2,15 @@
 Thumbs.db
 .env
 .env.*
+!portal/.env
 *.log
 .idea/
 .vscode/
+portal/node_modules/
+portal/dist/
+portal/test-results/
+portal/playwright-report/
+portal/blob-report/
+figma/*.zip
+portal/test-results/
+portal/playwright-report/
