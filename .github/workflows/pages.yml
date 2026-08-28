@@ -32,7 +32,7 @@ jobs:
       - run: npm run build
         env:
           VITE_BASE: /
-          VITE_PORTAL_ORIGIN: https://chv.won.onl
+          VITE_PORTAL_ORIGIN: https://chv.blc.cab
           VITE_CIVIC_API: https://dao.won.onl/civic
           VITE_OFFICIAL_UI: https://dao.won.onl
       - uses: actions/upload-pages-artifact@v3

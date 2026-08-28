@@ -12,26 +12,31 @@ function isLocalHost() {
   return ["localhost", "127.0.0.1"].includes(host());
 }
 
-function isBypassHost() {
+/** Static portal hosts: prefer won.onl civic (no CF) so RF users can reach API. */
+function preferWonCivic() {
   const h = host();
-  return h.endsWith("won.onl") || h.endsWith("github.io");
+  return (
+    h === "chv.blc.cab" ||
+    h.endsWith("won.onl") ||
+    h.endsWith("github.io")
+  );
 }
 
 export function civicBase() {
   if (isLocalHost()) return "/civic";
-  if (isBypassHost()) return "https://dao.won.onl/civic";
-  return import.meta.env.VITE_CIVIC_API || "https://dao.blc.cab/civic";
+  if (preferWonCivic()) return "https://dao.won.onl/civic";
+  return import.meta.env.VITE_CIVIC_API || "https://dao.won.onl/civic";
 }
 
 export const CIVIC_API = civicBase();
 
 export const OFFICIAL_UI = (() => {
-  if (isBypassHost()) return "https://dao.won.onl";
-  return import.meta.env.VITE_OFFICIAL_UI || "https://dao.blc.cab";
+  if (preferWonCivic()) return "https://dao.won.onl";
+  return import.meta.env.VITE_OFFICIAL_UI || "https://dao.won.onl";
 })();
 
 export const PORTAL_ORIGIN =
-  import.meta.env.VITE_PORTAL_ORIGIN || "https://chv.won.onl";
+  import.meta.env.VITE_PORTAL_ORIGIN || "https://chv.blc.cab";
 
 export function tonConnectManifestUrl() {
   if (typeof window === "undefined") return `${PORTAL_ORIGIN}/tonconnect-manifest.json`;

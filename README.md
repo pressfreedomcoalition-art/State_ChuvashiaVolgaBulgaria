@@ -2,8 +2,8 @@
 
 Кастомный UI государства (Чувашия / Волжская Булгария): только статика, без серверных секретов.
 
-Публичный фронт (GitHub Pages, без IP origin): **https://chv.won.onl**  
-Пока DNS не прописан: `https://pressfreedomcoalition-art.github.io/State_ChuvashiaVolgaBulgaria/`
+Публичный фронт (GitHub Pages, без IP VPS): **https://chv.blc.cab**  
+API для РФ: `https://dao.won.onl/civic` (без Cloudflare).
 
 Свой фронт на своём сервере подключается к боевому API **https://dao.blc.cab/civic** и к любому ДАО (в т.ч. своему). Смартконтракты не дадут сломать казну или нарисовать чужой голос.
 
