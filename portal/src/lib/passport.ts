@@ -202,6 +202,14 @@ export async function ensurePresentation(opts: {
   voting?: string;
   reason?: string;
 } = {}): Promise<string> {
+  // Session presentation handed back from official DAO Face ID export.
+  try {
+    const sess = sessionStorage.getItem("chv_session_presentation");
+    if (sess && sess.includes("~")) return sess;
+  } catch {
+    /* ignore */
+  }
+
   let rec = getSession() || loadPassportVault();
   if (!rec) throw new Error("no_passport");
   if (!getSession()) {

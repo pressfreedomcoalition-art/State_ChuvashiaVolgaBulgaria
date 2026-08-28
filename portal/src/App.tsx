@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Shell } from "./components/Shell";
 import { Login } from "./pages/Login";
+import { AuthReturn } from "./pages/AuthReturn";
 import { Citizenship } from "./pages/Citizenship";
 import { Passport } from "./pages/Passport";
 import { Referendums } from "./pages/Referendums";
@@ -15,6 +16,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Login />} />
+      <Route path="/auth/return" element={<AuthReturn />} />
       <Route path="/elig" element={<EligReturn />} />
       <Route path="/sandbox" element={<Sandbox />} />
       <Route element={<Shell />}>
