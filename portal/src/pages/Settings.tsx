@@ -37,8 +37,8 @@ export function Settings() {
       </div>
       <div className="card">
         <h3>{tt("settingsGas")}</h3>
-        <button className="btn btn-primary" onClick={() => openOfficial(officialDaoUrl())}>
-          {tt("goOfficial")}
+        <button className="btn btn-ghost" onClick={() => openOfficial(officialDaoUrl())}>
+          Сложные шаги на official (create/KYC SDK)
         </button>
       </div>
       <div className="card">
