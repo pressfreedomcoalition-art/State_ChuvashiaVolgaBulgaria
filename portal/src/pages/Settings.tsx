@@ -37,8 +37,9 @@ export function Settings() {
       </div>
       <div className="card">
         <h3>{tt("settingsGas")}</h3>
+        <p className="muted">Газ, KYC и пути гражданства — в этом кабинете (экраны Паспорт / Гражданство).</p>
         <button className="btn btn-ghost" onClick={() => openOfficial(officialDaoUrl())}>
-          Сложные шаги на official (create/KYC SDK)
+          Открыть DAO (справка)
         </button>
       </div>
       <div className="card">

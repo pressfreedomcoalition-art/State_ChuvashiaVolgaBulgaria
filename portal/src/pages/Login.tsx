@@ -9,6 +9,7 @@ import {
   stripPresentFromUrl,
 } from "../lib/presentReturn";
 import { hasLocalVault, restoreFromPhrase, unlockPassport } from "../lib/passport";
+import { restoreFromWallet } from "../lib/passportWalletBackup";
 
 const SESSION_PRESENT = "chv_session_presentation";
 
@@ -98,6 +99,32 @@ export function Login() {
     }
   }
 
+  async function doWalletRestore() {
+    setBusy(true);
+    setErr("");
+    try {
+      if (!wallet) {
+        ui.openModal();
+        setInfo("Подключите тот же кошелёк, что привязан к паспорту");
+        return;
+      }
+      await restoreFromWallet(ui);
+      setInfo("Паспорт восстановлен по кошельку");
+      nav("/citizenship", { replace: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "not_found" || msg.includes("no wallet backup")) {
+        setErr("К этому кошельку паспорт ещё не привязан. Сначала Face ID / фраза, затем привязка в «Паспорт».");
+      } else if (msg === "connect_wallet") {
+        setErr("Подключите кошелёк");
+      } else {
+        setErr(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="auth">
       <div className="auth-card">
@@ -144,6 +171,13 @@ export function Login() {
                 }}
               >
                 Face ID через DAO (кошелёк + биометрия)
+              </button>
+              <button
+                className="btn btn-ghost btn-wide"
+                disabled={busy}
+                onClick={() => void doWalletRestore()}
+              >
+                Восстановить через кошелёк
               </button>
               <button className="btn btn-ghost btn-wide" onClick={() => setStep("phrase")}>
                 Восстановить через seed-фразу

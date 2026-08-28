@@ -2,6 +2,10 @@
 
 Нужно кабинету **https://chv.blc.cab** (бот `@bulgaria_state_bot`).
 
+> **Статус (2026-08-28):** реализовано в основном DAO. Полный контракт + API привязки кошелька:  
+> **[DAO_PASSPORT_API_LINK.md](./DAO_PASSPORT_API_LINK.md)** → в репо DAO: `docs/CHV_PORTAL_PASSPORT_API.md`  
+> Живой UI: https://dao.blc.cab `#exportPresent=1&return=…`
+
 ## Зачем
 
 У гражданина уже есть civic-паспорт в официальном миниаппе DAO. На `chv.blc.cab` другое origin — локальный Face ID vault DAO туда не переносится. Нужен сценарий:
@@ -18,8 +22,10 @@ Partner elig (`#elig=1`) даёт только да/нет — **не подхо
 CHV открывает (Telegram `openLink` / браузер):
 
 ```
-https://dao.won.onl/#exportPresent=1&dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&return=https%3A%2F%2Fchv.blc.cab%2Fauth%2Freturn&app=CHV%20Cabinet
+https://dao.blc.cab/#exportPresent=1&dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&return=https%3A%2F%2Fchv.blc.cab%2Fauth%2Freturn&app=CHV%20Cabinet
 ```
+
+(Канон хоста — **dao.blc.cab**; `dao.won.onl` — зеркало.)
 
 Параметры:
 
@@ -36,9 +42,9 @@ https://dao.won.onl/#exportPresent=1&dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c
 ## UX в DAO
 
 1. Экран: хост из `return` (например `chv.blc.cab`), текст «Разрешить кабинету получить одноразовый ключ паспорта (presentation)».
-2. Face ID / фраза → `createPresentation` как для civic-голоса (`audience=blc-civic-verifier`).
+2. Face ID / фраза / wallet-restore → `createPresentation` как для civic-голоса. **Новый выпуск паспорта в этом режиме запрещён.**
 3. Кнопка «Разрешить» → редирект **только после** явного согласия.
-4. TTL presentation: как kb-jwt сейчас (короткий); CHV сразу кладёт в свой vault/session и при необходимости делает phrase backup у себя.
+4. TTL presentation: как kb-jwt сейчас (короткий); CHV сразу кладёт в свой vault/session.
 
 ## Контракт возврата на CHV
 
@@ -52,32 +58,28 @@ https://chv.blc.cab/auth/return?presentation=<url-encoded jwt~kb-jwt>
 t.me/bulgaria_state_bot?startapp=present_<base64url(JSON)>
 ```
 
-JSON для `present_`:
-
 ```json
 { "presentation": "<credential>~<kb-jwt>", "dao": "EQDD0Z8_…", "nonce": "…" }
 ```
 
-Формат совместим с уже существующим парсером `presentLink.ts` / `present_=1` в официальном миниаппе — CHV реализует тот же приём.
-
-**Запрещено:** логировать presentation, класть в analytics, оставлять в history дольше необходимого (CHV после чтения чистит query).
+**Запрещено:** логировать presentation, analytics, оставлять в history — CHV после чтения чистит query.
 
 ## Ошибки
 
 | Ситуация | Поведение DAO |
 |----------|----------------|
-| Нет паспорта | экран «Создать паспорт» / fail closed, без return с пустым presentation |
+| Нет паспорта | fail closed, без return с пустым presentation |
 | Face ID denied | остаться на DAO, не редиректить |
-| `return` не https | 400 / отказ |
+| `return` не https | отказ |
 | Пользователь «Отмена» | `return?error=denied` без presentation |
 
 ## Приёмка
 
-1. С CHV «Face ID через DAO» → Face ID на dao.won.onl → возврат на `/auth/return` с `presentation`.
-2. CHV показывает статус гражданина для `EQDD0Z8_…` через `POST /civic/v1/citizenship/status`.
-3. Повторный заход в CHV без DAO: локальный vault CHV + Face ID Telegram Mini App CHV-бота.
-4. elig-only путь **не** используется для этого сценария.
+1. С CHV «Face ID через DAO» → Face ID на dao.blc.cab → `/auth/return` с `presentation`.
+2. CHV: `POST /civic/v1/citizenship/status` для `EQDD0Z8_…`.
+3. Повторный заход в CHV без DAO: локальный vault CHV.
+4. elig-only **не** используется.
 
-## Вне скоупа этого ТЗ
+## Вне скоупа
 
-Сам UI CHV, TonConnect, оплата PathPay — на стороне кабинета. DAO только: unlock + export presentation + return.
+UI CHV, TonConnect, PathPay — кабинет. DAO: unlock + export + return (+ wallet-bind API в том же doc).

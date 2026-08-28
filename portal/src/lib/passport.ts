@@ -19,10 +19,6 @@ function verifierBase() {
   return civicBase().replace(/\/$/, "");
 }
 
-async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
-}
-
 function b64(u8: Uint8Array): string {
   let s = "";
   for (const b of u8) s += String.fromCharCode(b);
@@ -46,7 +42,7 @@ async function deriveKey(secret: string, saltB64: string): Promise<CryptoKey> {
     ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 120_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt as BufferSource, iterations: 120_000, hash: "SHA-256" },
     base,
     { name: "AES-GCM", length: 256 },
     false,
@@ -63,7 +59,11 @@ export async function decryptPassportRecord(
   const packed = fromB64(ciphertext);
   const iv = packed.slice(0, 12);
   const ct = packed.slice(12);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv as BufferSource },
+    key,
+    ct as BufferSource,
+  );
   const rec = JSON.parse(new TextDecoder().decode(plain)) as PassportRecord;
   if (!rec?.credential || !rec?.holderPrivateJwk) throw new Error("bad_vault");
   return rec;
@@ -74,7 +74,9 @@ export async function encryptPassportRecord(rec: PassportRecord, secret: string)
   const key = await deriveKey(secret, salt);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plain = new TextEncoder().encode(JSON.stringify(rec));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain));
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource }, key, plain),
+  );
   const packed = new Uint8Array(iv.length + ct.length);
   packed.set(iv, 0);
   packed.set(ct, iv.length);

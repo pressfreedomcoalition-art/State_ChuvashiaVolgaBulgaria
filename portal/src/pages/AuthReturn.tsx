@@ -17,7 +17,7 @@ export function AuthReturn() {
     const p = parsePresentReturn() || params.get("presentation");
     if (!p) {
       setMsg(
-        "DAO ещё не вернул presentation. Нужна доработка основного DAO — см. docs/DAO_PRESENT_RETURN_TZ.md",
+        "Нет presentation в URL. Откройте вход через «Face ID (через DAO)» ещё раз — см. docs/DAO_PASSPORT_API_LINK.md",
       );
       return;
     }
