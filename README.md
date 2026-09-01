@@ -10,12 +10,14 @@ API для РФ: `https://dao.won.onl/civic` (без Cloudflare).
 ## С чего начать
 
 1. [docs/CUSTOM_UI_API.md](docs/CUSTOM_UI_API.md) — основное ТЗ по API (отдать разрабу UI).
-2. Живая проверка: `GET https://dao.blc.cab/civic/v1/public`
+2. [docs/OWN_CACHE_SERVER_TZ.md](docs/OWN_CACHE_SERVER_TZ.md) — **свой сервер кеша**, независимо от shared `dao.*/civic`.
+3. Живая проверка платформы: `GET https://dao.blc.cab/civic/v1/public`
 
 ## Остальные доки
 
 | Файл | Зачем |
 |------|--------|
+| [OWN_CACHE_SERVER_TZ.md](docs/OWN_CACHE_SERVER_TZ.md) | Поднять свой `/v1/cache/*` (копия listCache из `dao`) |
 | [PARTNER_ELIG.md](docs/PARTNER_ELIG.md) | «Гражданин?» для своего сайта (да/нет, без права голоса) |
 | [CIVIC_INTEGRATION.md](docs/CIVIC_INTEGRATION.md) | Гражданство и civic-голос |
 | [CITIZENSHIP_PATHS.md](docs/CITIZENSHIP_PATHS.md) | Пути гражданства |
