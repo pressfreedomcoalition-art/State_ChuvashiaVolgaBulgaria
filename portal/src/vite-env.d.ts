@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_DAO_ADDRESS?: string;
   readonly VITE_LANG_DAO_ADDRESS?: string;
   readonly VITE_CIVIC_API?: string;
+  readonly VITE_CACHE_API?: string;
   readonly VITE_OFFICIAL_UI?: string;
   readonly VITE_PORTAL_ORIGIN?: string;
   readonly VITE_BULCOIN_DEPOSIT_URL?: string;

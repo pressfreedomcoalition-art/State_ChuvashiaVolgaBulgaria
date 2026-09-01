@@ -1,0 +1,14 @@
+[Unit]
+Description=Warm CHV cache from platform civic (one-shot)
+After=network-online.target chv-cache.service
+Requires=chv-cache.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/chv-cache
+EnvironmentFile=-/opt/chv-cache/.env
+Environment=CACHE_URL=http://127.0.0.1:8790
+Environment=CIVIC_URL=https://dao.won.onl/civic
+ExecStart=/usr/bin/node /opt/chv-cache/scripts/warm-from-civic.mjs

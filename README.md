@@ -11,7 +11,8 @@ API для РФ: `https://dao.won.onl/civic` (без Cloudflare).
 
 1. [docs/CUSTOM_UI_API.md](docs/CUSTOM_UI_API.md) — основное ТЗ по API (отдать разрабу UI).
 2. [docs/OWN_CACHE_SERVER_TZ.md](docs/OWN_CACHE_SERVER_TZ.md) — **свой сервер кеша**, независимо от shared `dao.*/civic`.
-3. Живая проверка платформы: `GET https://dao.blc.cab/civic/v1/public`
+3. [cache-server/README.md](cache-server/README.md) — код + выкат VPS (`deploy/install-chv-cache.sh`).
+4. Живая проверка платформы: `GET https://dao.blc.cab/civic/v1/public`
 
 ## Остальные доки
 

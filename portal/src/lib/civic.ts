@@ -1,4 +1,4 @@
-import { civicBase, DAO_ADDRESS, OFFICIAL_UI } from "./config";
+import { cacheBase, civicBase, DAO_ADDRESS, OFFICIAL_UI } from "./config";
 
 export type CacheEnvelope<T> = {
   ok: boolean;
@@ -117,14 +117,59 @@ export async function civicGet<T>(path: string): Promise<T> {
   throw lastErr || new Error("civic failed");
 }
 
+async function cacheFetch<T>(path: string): Promise<T> {
+  let lastErr: unknown;
+  const base = cacheBase();
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch(`${base}${path}`, { credentials: "omit" });
+    if (res.status === 429) {
+      await sleep(800 * (i + 1));
+      continue;
+    }
+    if (res.status === 404) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw Object.assign(new Error(body.error || "miss"), { code: "miss" });
+    }
+    if (!res.ok) {
+      lastErr = new Error(`cache ${res.status}`);
+      await sleep(400);
+      continue;
+    }
+    return (await res.json()) as T;
+  }
+  throw lastErr || new Error("cache failed");
+}
+
+function usesOwnCacheHost() {
+  return cacheBase() !== civicBase();
+}
+
 export async function cacheGet<T>(key: string): Promise<T | null> {
+  const path = `/v1/cache/list?key=${encodeURIComponent(key)}`;
+  if (!usesOwnCacheHost()) {
+    try {
+      const env = await civicGet<CacheEnvelope<T>>(path);
+      return env.value ?? null;
+    } catch (e) {
+      if ((e as { code?: string }).code === "miss") return null;
+      throw e;
+    }
+  }
   try {
-    const env = await civicGet<CacheEnvelope<T>>(
-      `/v1/cache/list?key=${encodeURIComponent(key)}`,
-    );
+    const env = await cacheFetch<CacheEnvelope<T>>(path);
     return env.value ?? null;
   } catch (e) {
     if ((e as { code?: string }).code === "miss") return null;
+    // Dev proxy to dead local cache-server → keep working via platform.
+    if (cacheBase() === "/cache") {
+      try {
+        const env = await civicGet<CacheEnvelope<T>>(path);
+        return env.value ?? null;
+      } catch (e2) {
+        if ((e2 as { code?: string }).code === "miss") return null;
+        throw e2;
+      }
+    }
     throw e;
   }
 }

@@ -1,0 +1,23 @@
+[Unit]
+Description=CHV State McKeys cache server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/chv-cache
+EnvironmentFile=-/opt/chv-cache/.env
+ExecStart=/usr/bin/node /opt/chv-cache/server.mjs
+Restart=on-failure
+RestartSec=3
+# No platform secrets here — only DAO_ADDRESS / CORS / optional TONAPI_KEY
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/chv-cache/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

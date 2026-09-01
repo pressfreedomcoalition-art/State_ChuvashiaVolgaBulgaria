@@ -8,6 +8,10 @@ Thumbs.db
 .vscode/
 portal/node_modules/
 portal/dist/
+cache-server/node_modules/
+cache-server/data/
+cache-server/.env
+cache-server/.env.*
 portal/test-results/
 portal/playwright-report/
 portal/blob-report/

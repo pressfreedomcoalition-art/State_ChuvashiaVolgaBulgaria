@@ -28,6 +28,21 @@ export function civicBase() {
   return import.meta.env.VITE_CIVIC_API || "https://dao.won.onl/civic";
 }
 
+/**
+ * Snapshot cache host (`/v1/cache/*`).
+ * Prod: `VITE_CACHE_API` → own server; unset → platform civic (unchanged Pages).
+ * Local: Vite `/cache` proxy → cache-server :8790 (falls back to civic if down).
+ */
+export function cacheBase() {
+  const explicit = String(import.meta.env.VITE_CACHE_API || "").trim().replace(/\/$/, "");
+  if (isLocalHost()) {
+    if (explicit.startsWith("http")) return explicit;
+    return "/cache";
+  }
+  if (explicit) return explicit;
+  return civicBase();
+}
+
 export const CIVIC_API = civicBase();
 
 export const OFFICIAL_UI = (() => {

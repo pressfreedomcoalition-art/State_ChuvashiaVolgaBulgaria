@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer: warm CHV cache every 2 minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=chv-cache-warm.service
+
+[Install]
+WantedBy=timers.target
