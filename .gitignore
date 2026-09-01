@@ -14,6 +14,7 @@ cache-server/node_modules/
 cache-server/data/
 cache-server/.env
 cache-server/.env.*
+!cache-server/.env.example
 portal/test-results/
 portal/playwright-report/
 portal/blob-report/
