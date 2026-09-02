@@ -43,9 +43,12 @@ jobs:
           VITE_DAO_ADDRESS: ${{ vars.VITE_DAO_ADDRESS }}
       - name: Smoke test + E2E
         run: |
-          npx playwright install chromium
+          npx playwright install --with-deps chromium
           npx vite preview --host 127.0.0.1 --port 4173 &
-          sleep 3
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
           node scripts/smoke-check.mjs http://127.0.0.1:4173/
           npm run test:e2e -- --project=desktop
         env:

@@ -35,6 +35,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Chromium for smoke
+        run: npx playwright install --with-deps chromium
+
       - name: Smoke production
         id: prod
         continue-on-error: true
@@ -49,7 +52,10 @@ jobs:
         run: |
           npm run build
           npx vite preview --host 127.0.0.1 --port 4173 &
-          sleep 3
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
           node scripts/smoke-check.mjs http://127.0.0.1:4173/
 
       - name: Commit auto-fix

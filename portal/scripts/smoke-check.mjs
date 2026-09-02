@@ -3,23 +3,52 @@
  * Usage: node scripts/smoke-check.mjs [url]
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const url = process.argv[2] || process.env.SMOKE_URL || "http://127.0.0.1:4173/";
-const chromePaths = [
-  process.env.CHROME_PATH,
-  process.platform === "win32"
-    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    : "/usr/bin/google-chrome",
-  "/usr/bin/chromium-browser",
-  "/usr/bin/chromium",
-].filter(Boolean);
+
+function findPlaywrightChrome() {
+  const roots = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    join(homedir(), ".cache", "ms-playwright"),
+    join(homedir(), "AppData", "Local", "ms-playwright"),
+  ].filter(Boolean);
+
+  const found = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    for (const name of readdirSync(root)) {
+      if (!name.startsWith("chromium")) continue;
+      const candidates = [
+        join(root, name, "chrome-linux", "chrome"),
+        join(root, name, "chrome-linux64", "chrome"),
+        join(root, name, "chrome-win64", "chrome.exe"),
+        join(root, name, "chrome-win", "chrome.exe"),
+        join(root, name, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+        join(root, name, "chrome-mac-arm64", "Chromium.app", "Contents", "MacOS", "Chromium"),
+      ];
+      for (const c of candidates) if (existsSync(c)) found.push(c);
+    }
+  }
+  return found;
+}
 
 async function pickChrome() {
   const { access } = await import("node:fs/promises");
+  const chromePaths = [
+    process.env.CHROME_PATH,
+    ...findPlaywrightChrome(),
+    process.platform === "win32"
+      ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      : null,
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+  ].filter(Boolean);
+
   for (const p of chromePaths) {
     try {
       await access(p);
@@ -28,10 +57,26 @@ async function pickChrome() {
       /* try next */
     }
   }
-  throw new Error("Chrome/Chromium not found for smoke check");
+  throw new Error("Chrome/Chromium not found for smoke check (run: npx playwright install chromium)");
+}
+
+async function waitForCdp(port, attempts = 30) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
+      const page = list.find((t) => t.type === "page");
+      if (page?.webSocketDebuggerUrl) return page;
+    } catch {
+      /* retry */
+    }
+    await sleep(500);
+  }
+  throw new Error(`CDP not ready on port ${port}`);
 }
 
 const chrome = await pickChrome();
+console.log("SMOKE_BROWSER", chrome);
+
 const dir = join(tmpdir(), `chv-smoke-${Date.now()}`);
 mkdirSync(dir, { recursive: true });
 const port = 9400 + Math.floor(Math.random() * 100);
@@ -42,6 +87,7 @@ const proc = spawn(
     "--headless=new",
     "--disable-gpu",
     "--no-sandbox",
+    "--disable-dev-shm-usage",
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${dir}`,
     "about:blank",
@@ -51,11 +97,7 @@ const proc = spawn(
 
 let exitCode = 1;
 try {
-  await sleep(1500);
-  const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-  const page = list.find((t) => t.type === "page");
-  if (!page?.webSocketDebuggerUrl) throw new Error("no CDP page target");
-
+  const page = await waitForCdp(port);
   const { default: WebSocket } = await import("ws");
   const errors = [];
 
