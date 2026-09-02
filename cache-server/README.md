@@ -24,10 +24,12 @@ sudo systemctl restart chv-cache
 # nginx + certbot for cache.chv.blc.cab (or your host)
 ```
 
-Then set GitHub Actions variable **`VITE_CACHE_API`**=`https://dao.won.onl/chv-cache` so Pages builds point the portal at your cache.
+Then set GitHub Actions variable **`VITE_CACHE_API`**=`https://cache…` (свой хост) so Pages builds point the portal at your cache.
 
-**Live (боевой):** `https://dao.won.onl/chv-cache` → VPS `185.237.207.81` systemd `chv-cache` + warm timer.  
-Автодеплой: `.github/workflows/deploy-cache.yml` (self-hosted `dao-deploy`).
+**Сейчас (временно):** портал без `VITE_CACHE_API` → shared кеш `dao.won.onl/civic` (как раньше).  
+Код `cache-server/` и `deploy/` готовы: когда появится **свой** VPS/домен — `install-chv-cache.sh` + переменная, и State снова независим по чтениям.
+
+Автодеплой на чужой dao-VPS отключён (только `workflow_dispatch` вручную).
 
 ## Run
 

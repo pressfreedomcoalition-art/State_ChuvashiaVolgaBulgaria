@@ -2,18 +2,18 @@ name: Deploy CHV cache
 
 # Publishes cache-server/ to the dao VPS (same host as civic).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "cache-server/**"
-      - "deploy/chv-cache*"
-      - "deploy/install-chv-cache.sh"
-      - "deploy/patch-nginx-chv-cache.sh"
-      - ".github/workflows/deploy-cache.yml"
+  # Не деплоим автоматически на dao-VPS — свой кеш только на отдельном сервере State.
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type OWN_VPS to publish cache-server (not the shared dao host)"
+        required: true
+        default: ""
+
 
 jobs:
   deploy:
+    if: github.event.inputs.confirm == 'OWN_VPS'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
