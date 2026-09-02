@@ -1,0 +1,91 @@
+name: Deploy CHV cache
+
+# Publishes cache-server/ to the dao VPS (same host as civic).
+# Self-hosted runner with ~/.ssh/dao_won_deploy (labels: dao-deploy).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cache-server/**"
+      - "deploy/chv-cache*"
+      - "deploy/install-chv-cache.sh"
+      - "deploy/patch-nginx-chv-cache.sh"
+      - ".github/workflows/deploy-cache.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64, dao-deploy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish cache-server to VPS
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          KEY=""
+          for cand in \
+            "$USERPROFILE/.ssh/dao_won_deploy" \
+            "$HOME/.ssh/dao_won_deploy" \
+            "/c/Users/Admin/.ssh/dao_won_deploy"
+          do
+            if [[ -f "$cand" ]]; then KEY="$cand"; break; fi
+          done
+          test -n "$KEY" || { echo "missing dao_won_deploy SSH key"; exit 1; }
+          HOST="${SSH_HOST:-185.237.207.81}"
+          USER_="${SSH_USER:-root}"
+          PORT="${SSH_PORT:-22}"
+          SSH=(ssh -i "$KEY" -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          SCP=(scp -i "$KEY" -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          tar -cf "$TMP/bundle.tar" \
+            --exclude=node_modules --exclude=data --exclude=.env \
+            -C cache-server .
+
+          "${SCP[@]}" "$TMP/bundle.tar" \
+            deploy/chv-cache.service \
+            deploy/chv-cache-warm.service \
+            deploy/chv-cache-warm.timer \
+            deploy/patch-nginx-chv-cache.sh \
+            "${USER_}@${HOST}:/tmp/"
+
+          "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+          set -euo pipefail
+          install -d -o www-data -g www-data /opt/chv-cache /opt/chv-cache/data
+          if [[ -f /opt/chv-cache/.env ]]; then
+            cp -a /opt/chv-cache/.env /tmp/chv-cache.env.bak
+          fi
+          tar -xf /tmp/bundle.tar -C /opt/chv-cache
+          if [[ -f /tmp/chv-cache.env.bak ]]; then
+            mv /tmp/chv-cache.env.bak /opt/chv-cache/.env
+          elif [[ ! -f /opt/chv-cache/.env ]]; then
+            printf '%s\n' \
+              'PORT=8790' \
+              'DAO_ADDRESS=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx' \
+              'CORS_ORIGIN=https://chv.blc.cab,http://localhost:5173' \
+              'DATA_DIR=/opt/chv-cache/data' \
+              > /opt/chv-cache/.env
+          fi
+          cd /opt/chv-cache
+          npm ci --omit=dev
+          chown -R www-data:www-data /opt/chv-cache
+          install -m 644 /tmp/chv-cache.service /etc/systemd/system/chv-cache.service
+          install -m 644 /tmp/chv-cache-warm.service /etc/systemd/system/chv-cache-warm.service
+          install -m 644 /tmp/chv-cache-warm.timer /etc/systemd/system/chv-cache-warm.timer
+          systemctl daemon-reload
+          systemctl enable --now chv-cache.service
+          systemctl enable --now chv-cache-warm.timer
+          systemctl restart chv-cache.service
+          /bin/bash /tmp/patch-nginx-chv-cache.sh || true
+          sleep 1
+          curl -fsS http://127.0.0.1:8790/health
+          echo
+          curl -fsS https://dao.won.onl/chv-cache/health
+          echo
+          REMOTE

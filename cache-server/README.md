@@ -24,7 +24,10 @@ sudo systemctl restart chv-cache
 # nginx + certbot for cache.chv.blc.cab (or your host)
 ```
 
-Then set GitHub Actions variable **`VITE_CACHE_API`**=`https://cache…` so Pages builds point the portal at your cache. Until set, portal keeps using platform civic cache.
+Then set GitHub Actions variable **`VITE_CACHE_API`**=`https://dao.won.onl/chv-cache` so Pages builds point the portal at your cache.
+
+**Live (боевой):** `https://dao.won.onl/chv-cache` → VPS `185.237.207.81` systemd `chv-cache` + warm timer.  
+Автодеплой: `.github/workflows/deploy-cache.yml` (self-hosted `dao-deploy`).
 
 ## Run
 

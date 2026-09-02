@@ -7,6 +7,8 @@ on:
       - "portal/**"
       - ".github/workflows/pages.yml"
       - ".github/workflows/monitor.yml"
+      - "cache-server/**"
+      - ".github/workflows/deploy-cache.yml"
   workflow_dispatch:
 
 permissions:
@@ -41,6 +43,9 @@ jobs:
           VITE_OFFICIAL_UI: https://dao.won.onl
           VITE_CACHE_API: ${{ vars.VITE_CACHE_API }}
           VITE_DAO_ADDRESS: ${{ vars.VITE_DAO_ADDRESS }}
+      # Rebuild Pages when only cache URL / workflow changes (var is bake-time).
+      - name: Note cache API
+        run: echo "VITE_CACHE_API=${{ vars.VITE_CACHE_API }}"
       - name: Smoke test + E2E
         run: |
           npx playwright install --with-deps chromium
