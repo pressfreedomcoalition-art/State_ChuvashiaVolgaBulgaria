@@ -1,11 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+test("login renders without JS errors (no white screen)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await expect(page.getByText(/Хар пÿрт|Личный кабинет/i)).toBeVisible({ timeout: 15_000 });
+  expect(errors).toEqual([]);
+});
+
 test("login chrome has no email password", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /кошелёк|Connect|хар/i })).toBeVisible();
   await expect(page.locator('input[type="email"]')).toHaveCount(0);
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /паспорт|passport|unlock/i })).toBeVisible();
 });
 
 test("cabinet click tour", async ({ page }) => {

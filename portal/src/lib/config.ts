@@ -12,8 +12,17 @@ function isLocalHost() {
   return ["localhost", "127.0.0.1"].includes(host());
 }
 
+function forceWonCivic() {
+  try {
+    return sessionStorage.getItem("chv_civic_force_won") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** Static portal hosts: prefer won.onl civic (no CF) so RF users can reach API. */
 function preferWonCivic() {
+  if (forceWonCivic()) return true;
   const h = host();
   return (
     h === "chv.blc.cab" ||

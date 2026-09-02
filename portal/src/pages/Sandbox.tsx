@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { civicBase, DAO_ADDRESS, PORTAL_ORIGIN, TG_BOT_URL } from "../lib/config";
 import { civicGet } from "../lib/civic";
+import { clearBugLog, getBugLog, type BugEntry } from "../lib/bugLog";
 
 export function Sandbox() {
   const [pub, setPub] = useState("…");
   const [count, setCount] = useState("…");
+  const [bugs, setBugs] = useState<BugEntry[]>(() => getBugLog());
 
   useEffect(() => {
     void civicGet<{ ok?: boolean }>("/v1/public")
@@ -26,6 +28,34 @@ export function Sandbox() {
       </div>
       <div className="card">
         origin {PORTAL_ORIGIN} · api {civicBase()} · bot {TG_BOT_URL}
+      </div>
+      <div className="card stack" data-testid="sandbox-bugs">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <strong>Bug log ({bugs.length})</strong>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              clearBugLog();
+              setBugs([]);
+            }}
+          >
+            Очистить
+          </button>
+        </div>
+        {bugs.length === 0 ? (
+          <p className="muted">Ошибок в localStorage нет.</p>
+        ) : (
+          bugs.slice(0, 15).map((b) => (
+            <details key={b.id}>
+              <summary>
+                [{b.kind}] {new Date(b.ts).toLocaleString()} — {b.message.slice(0, 120)}
+                {b.autoFix ? ` · fix: ${b.autoFix}${b.fixed ? " ✓" : ""}` : ""}
+              </summary>
+              {b.stack ? <pre style={{ fontSize: 11, overflow: "auto" }}>{b.stack}</pre> : null}
+            </details>
+          ))
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,63 @@
+name: Monitor & auto-fix
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monitor-autofix
+  cancel-in-progress: true
+
+jobs:
+  health:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - run: npm ci
+
+      - name: Smoke production
+        id: prod
+        continue-on-error: true
+        run: node scripts/smoke-check.mjs https://chv.blc.cab/ 2>&1 | tee /tmp/smoke.log
+
+      - name: Auto-fix from logs
+        if: steps.prod.outcome == 'failure'
+        run: node scripts/auto-fix.mjs "$(cat /tmp/smoke.log)"
+
+      - name: Verify fix locally
+        if: steps.prod.outcome == 'failure'
+        run: |
+          npm run build
+          npx vite preview --host 127.0.0.1 --port 4173 &
+          sleep 3
+          node scripts/smoke-check.mjs http://127.0.0.1:4173/
+
+      - name: Commit auto-fix
+        if: steps.prod.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet && echo "No auto-fix changes" && exit 0
+          git commit -m "fix(auto): remediate smoke failures on chv.blc.cab"
+          git push

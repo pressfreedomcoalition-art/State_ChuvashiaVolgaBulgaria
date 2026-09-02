@@ -3,6 +3,10 @@ name: GitHub Pages
 on:
   push:
     branches: [main]
+    paths:
+      - "portal/**"
+      - ".github/workflows/pages.yml"
+      - ".github/workflows/monitor.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,9 +39,17 @@ jobs:
           VITE_PORTAL_ORIGIN: https://chv.blc.cab
           VITE_CIVIC_API: https://dao.won.onl/civic
           VITE_OFFICIAL_UI: https://dao.won.onl
-          # Optional own cache (repo Variable or Environment secret). Empty → civic cache.
           VITE_CACHE_API: ${{ vars.VITE_CACHE_API }}
           VITE_DAO_ADDRESS: ${{ vars.VITE_DAO_ADDRESS }}
+      - name: Smoke test + E2E
+        run: |
+          npx playwright install chromium
+          npx vite preview --host 127.0.0.1 --port 4173 &
+          sleep 3
+          node scripts/smoke-check.mjs http://127.0.0.1:4173/
+          npm run test:e2e -- --project=desktop
+        env:
+          E2E_BASE_URL: http://127.0.0.1:4173
       - uses: actions/upload-pages-artifact@v3
         with:
           path: portal/dist
