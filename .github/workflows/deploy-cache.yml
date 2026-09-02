@@ -77,7 +77,13 @@ jobs:
           systemctl enable --now chv-cache-warm.timer
           systemctl restart chv-cache.service
           /bin/bash /tmp/patch-nginx-chv-cache.sh || true
-          sleep 1
+          for i in 1 2 3 4 5 6 7 8; do
+            if curl -fsS http://127.0.0.1:8790/health; then
+              echo
+              break
+            fi
+            sleep 2
+          done
           curl -fsS http://127.0.0.1:8790/health
           echo
           curl -fsS https://dao.won.onl/chv-cache/health
