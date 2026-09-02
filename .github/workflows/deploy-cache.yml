@@ -30,6 +30,7 @@ jobs:
           HOST="${SSH_HOST:-185.237.207.81}"
           USER_="${SSH_USER:-root}"
           PORT="${SSH_PORT:-22}"
+          install -d -m 700 "$HOME/.ssh"
           install -m 600 /dev/null "$HOME/.ssh/deploy_key"
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           SSH=(ssh -i "$HOME/.ssh/deploy_key" -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
