@@ -15,6 +15,10 @@ cache-server/data/
 cache-server/.env
 cache-server/.env.*
 !cache-server/.env.example
+bot/node_modules/
+bot/.env
+bot/.env.*
+!bot/.env.example
 portal/test-results/
 portal/playwright-report/
 portal/blob-report/

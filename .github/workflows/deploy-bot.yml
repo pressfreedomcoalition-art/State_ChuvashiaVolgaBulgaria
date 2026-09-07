@@ -1,0 +1,81 @@
+name: Deploy CHV Telegram bot
+
+# @bulgaria_state_bot — /start → Web App button (chv.blc.cab)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bot/**"
+      - "deploy/chv-bot.service"
+      - "deploy/install-chv-bot.sh"
+      - ".github/workflows/deploy-bot.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require bot token secret
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN}" ]; then
+            echo "::error::Add repository secret TELEGRAM_BOT_TOKEN (BotFather → @bulgaria_state_bot)"
+            exit 1
+          fi
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Publish bot to VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          HOST="${SSH_HOST:-185.237.207.81}"
+          USER_="${SSH_USER:-root}"
+          PORT="${SSH_PORT:-22}"
+          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          tar -cf "$TMP/bundle.tar" \
+            --exclude=node_modules --exclude=.env \
+            -C bot .
+          cp deploy/chv-bot.service "$TMP/chv-bot.service"
+
+          umask 077
+          {
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
+            printf 'WEBAPP_URL=%s\n' 'https://chv.blc.cab/'
+            printf 'BUTTON_TEXT=%s\n' 'Открыть гражданство'
+            printf 'MENU_BUTTON_TEXT=%s\n' 'Кабинет'
+            printf 'START_TEXT=%s\n' 'Кабинет гражданина Чувашии / Волжской Булгарии.\nНажмите кнопку, чтобы открыть миниапп.'
+          } >"$TMP/chv-bot.env"
+
+          "${SCP[@]}" "$TMP/bundle.tar" "$TMP/chv-bot.service" "$TMP/chv-bot.env" \
+            "${USER_}@${HOST}:/tmp/"
+
+          "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+          set -euo pipefail
+          install -d -o www-data -g www-data /opt/chv-bot
+          tar -xf /tmp/bundle.tar -C /opt/chv-bot
+          install -m 600 -o www-data -g www-data /tmp/chv-bot.env /opt/chv-bot/.env
+          rm -f /tmp/chv-bot.env
+          chown -R www-data:www-data /opt/chv-bot
+          install -m 644 /tmp/chv-bot.service /etc/systemd/system/chv-bot.service
+          systemctl daemon-reload
+          systemctl enable --now chv-bot.service
+          systemctl restart chv-bot.service
+          sleep 2
+          systemctl --no-pager -l is-active chv-bot.service
+          systemctl --no-pager -l status chv-bot.service | head -20
+          REMOTE
