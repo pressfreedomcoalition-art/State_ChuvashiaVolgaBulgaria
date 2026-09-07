@@ -56,6 +56,7 @@ jobs:
           {
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'WEBAPP_URL=%s\n' 'https://chv.blc.cab/'
+            printf 'WEBAPP_VERSION=%s\n' '${{ github.sha }}'
             printf 'BUTTON_TEXT=%s\n' 'Открыть гражданство'
             printf 'MENU_BUTTON_TEXT=%s\n' 'Кабинет'
             printf 'START_TEXT=%s\n' 'Кабинет гражданина Чувашии / Волжской Булгарии.\nНажмите кнопку, чтобы открыть миниапп.'

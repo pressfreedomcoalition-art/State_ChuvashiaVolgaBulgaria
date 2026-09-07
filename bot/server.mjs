@@ -3,7 +3,9 @@
  * /start → Web App button that opens the CHV cabinet miniapp.
  */
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
-const WEBAPP_URL = String(process.env.WEBAPP_URL || "https://chv.blc.cab/").trim();
+const WEBAPP_BASE = String(process.env.WEBAPP_URL || "https://chv.blc.cab/").trim();
+/** Bump / set on deploy so Telegram WebView does not keep a stale Mini App shell. */
+const WEBAPP_VERSION = String(process.env.WEBAPP_VERSION || "").trim();
 const BUTTON_TEXT = String(process.env.BUTTON_TEXT || "Открыть гражданство").trim();
 const MENU_BUTTON_TEXT = String(process.env.MENU_BUTTON_TEXT || "Кабинет").trim();
 const START_TEXT = String(
@@ -11,6 +13,17 @@ const START_TEXT = String(
     "Кабинет гражданина Чувашии / Волжской Булгарии.\nНажмите кнопку, чтобы открыть миниапп.",
 ).replace(/\\n/g, "\n");
 
+function resolveWebAppUrl(base, version) {
+  try {
+    const u = new URL(base);
+    if (version) u.searchParams.set("v", version);
+    return u.toString();
+  } catch {
+    return base;
+  }
+}
+
+const WEBAPP_URL = resolveWebAppUrl(WEBAPP_BASE, WEBAPP_VERSION);
 if (!TOKEN) {
   console.error("TELEGRAM_BOT_TOKEN is required");
   process.exit(1);
