@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { civicBase, DAO_ADDRESS, PORTAL_ORIGIN, TG_BOT_URL } from "../lib/config";
 import { civicGet } from "../lib/civic";
 import { clearBugLog, getBugLog, type BugEntry } from "../lib/bugLog";
+import { useApp } from "../state/AppState";
 
 export function Sandbox() {
+  const { tt } = useApp();
   const [pub, setPub] = useState("…");
   const [count, setCount] = useState("…");
   const [bugs, setBugs] = useState<BugEntry[]>(() => getBugLog());
@@ -19,9 +21,9 @@ export function Sandbox() {
 
   return (
     <div className="content stack">
-      <h1 className="page-title">Sandbox</h1>
+      <h1 className="page-title">{tt("sandbox")}</h1>
       <div className="card" data-testid="sandbox-public">
-        civic /v1/public: <strong>{pub}</strong>
+        API /v1/public: <strong>{pub}</strong>
       </div>
       <div className="card" data-testid="sandbox-count">
         citizens: <strong>{count}</strong>
@@ -40,11 +42,11 @@ export function Sandbox() {
               setBugs([]);
             }}
           >
-            Очистить
+            {tt("clearLog")}
           </button>
         </div>
         {bugs.length === 0 ? (
-          <p className="muted">Ошибок в localStorage нет.</p>
+          <p className="muted">{tt("noBugs")}</p>
         ) : (
           bugs.slice(0, 15).map((b) => (
             <details key={b.id}>

@@ -1,12 +1,45 @@
-import { useTonConnectUI } from "@tonconnect/ui-react";
+import { useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { DAO_ADDRESS, TG_BOT_URL } from "../lib/config";
-import { officialDaoUrl, shortAddr } from "../lib/civic";
-import { openBulCoinDeposit, openOfficial } from "../lib/telegram";
+import { shortAddr } from "../lib/civic";
+import { openBulCoinDeposit } from "../lib/telegram";
+import { pathAfterGate, resolveCitizenshipGate, writeCitizenFlag } from "../lib/authGate";
+import { restoreFromWallet } from "../lib/passportWalletBackup";
 
 export function Settings() {
-  const { tt, wallet, lang, setLang } = useApp();
+  const { tt, wallet, lang, setLang, isCitizen, setIsCitizen } = useApp();
+  const connected = useTonAddress();
   const [ui] = useTonConnectUI();
+  const nav = useNavigate();
+  const pendingRestore = useRef(false);
+  const tried = useRef<string | null>(null);
+
+  async function tryRestoreAfterConnect(addr: string) {
+    if (isCitizen === true) return;
+    if (tried.current === addr) return;
+    tried.current = addr;
+    try {
+      await restoreFromWallet(ui);
+      const gate = await resolveCitizenshipGate();
+      const citizen = gate === "citizen";
+      writeCitizenFlag(citizen ? true : gate === "not_citizen" ? false : null);
+      setIsCitizen(citizen ? true : gate === "not_citizen" ? false : null);
+      if (citizen) nav(pathAfterGate(gate), { replace: true });
+    } catch {
+      /* no backup on this wallet — stay in settings */
+    }
+  }
+
+  useEffect(() => {
+    if (!connected || isCitizen === true) return;
+    if (!pendingRestore.current) return;
+    pendingRestore.current = false;
+    void tryRestoreAfterConnect(connected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+
   return (
     <div className="stack">
       <h1 className="page-title">{tt("settings")}</h1>
@@ -15,7 +48,13 @@ export function Settings() {
         <p>{wallet ? shortAddr(wallet, 8, 6) : "—"}</p>
         <div className="row">
           {!wallet ? (
-            <button className="btn btn-primary" onClick={() => ui.openModal()}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (isCitizen !== true) pendingRestore.current = true;
+                ui.openModal();
+              }}
+            >
               {tt("connectWallet")}
             </button>
           ) : (
@@ -37,10 +76,10 @@ export function Settings() {
       </div>
       <div className="card">
         <h3>{tt("settingsGas")}</h3>
-        <p className="muted">Газ, KYC и пути гражданства — в этом кабинете (экраны Паспорт / Гражданство).</p>
-        <button className="btn btn-ghost" onClick={() => openOfficial(officialDaoUrl())}>
-          Открыть DAO (справка)
-        </button>
+        <p className="muted">{tt("settingsGasHint")}</p>
+        <Link className="btn btn-ghost" to="/passport">
+          {tt("openPassport")}
+        </Link>
       </div>
       <div className="card">
         <h3>{tt("buyBlc")}</h3>
@@ -48,7 +87,7 @@ export function Settings() {
           {tt("buyBlc")}
         </button>
         <p className="muted">
-          DAO {shortAddr(DAO_ADDRESS)} ·{" "}
+          {shortAddr(DAO_ADDRESS)} ·{" "}
           <a href={TG_BOT_URL} target="_blank" rel="noreferrer">
             @bulgaria_state_bot
           </a>

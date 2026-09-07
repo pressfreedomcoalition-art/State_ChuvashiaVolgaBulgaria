@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <rect width="160" height="160" rx="80" fill="#8B1D1D"/>
-  <g stroke="#fff" stroke-width="7" fill="none">
-    <path d="M80 18 L80 142 M18 80 L142 80 M34 34 L126 126 M126 34 L34 126"/>
-    <rect x="54" y="54" width="52" height="52"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100">
+  <rect width="160" height="100" fill="#ffde00"/>
+  <rect y="80" width="160" height="20" fill="#a2260b"/>
+  <!-- simplified Tree of Life + Three Suns for app icon -->
+  <g fill="#a2260b" transform="translate(80 48) scale(0.9)">
+    <path d="M0-28 8-20 0-12-8-20Z M-22-16-14-8-22 0-30-8Z M22-16 30-8 22 0 14-8Z"/>
+    <path d="M-3 8h6v22h-6zm-18 10h12v4H-21zm24 0h12v4H3z"/>
+    <path d="M-28 34h56v6H-28z M-18 28h8v8h-8zm10 0h8v8h-8zm10 0h8v8h-8z"/>
   </g>
 </svg>

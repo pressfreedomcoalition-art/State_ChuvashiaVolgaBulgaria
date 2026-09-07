@@ -7,7 +7,9 @@ type TgWebApp = {
   openLink?: (url: string) => void;
   openTelegramLink?: (url: string) => void;
   BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void };
-  initDataUnsafe?: { user?: { id?: number; first_name?: string } };
+  initDataUnsafe?: { user?: { id?: number; first_name?: string; language_code?: string } };
+  initData?: string;
+  languageCode?: string;
   colorScheme?: "light" | "dark";
   platform?: string;
 };
@@ -18,6 +20,15 @@ function tg(): TgWebApp | undefined {
 
 export function isTelegram(): boolean {
   return Boolean(tg());
+}
+
+/** Telegram UI language (Settings → Language), then WebApp languageCode inside a real Mini App. */
+export function getTelegramLanguageCode(): string | undefined {
+  const w = tg();
+  if (!w) return undefined;
+  if (w.initDataUnsafe?.user?.language_code) return w.initDataUnsafe.user.language_code;
+  if (w.initData && w.languageCode) return w.languageCode;
+  return undefined;
 }
 
 export function bootTelegram() {

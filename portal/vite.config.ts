@@ -21,7 +21,15 @@ export default defineConfig({
     host: true,
     proxy: {
       "/civic": { target: "https://dao.won.onl", changeOrigin: true },
-      "/cache": { target: "http://127.0.0.1:8790", changeOrigin: true },
+      // Own cache-server on :8790 when VITE_OWN_CACHE=1; otherwise same civic pool.
+      "/cache":
+        process.env.VITE_OWN_CACHE === "1"
+          ? { target: "http://127.0.0.1:8790", changeOrigin: true }
+          : {
+              target: "https://dao.won.onl",
+              changeOrigin: true,
+              rewrite: (p) => p.replace(/^\/cache/, "/civic"),
+            },
     },
   },
   preview: {
@@ -29,7 +37,14 @@ export default defineConfig({
     host: true,
     proxy: {
       "/civic": { target: "https://dao.won.onl", changeOrigin: true },
-      "/cache": { target: "http://127.0.0.1:8790", changeOrigin: true },
+      "/cache":
+        process.env.VITE_OWN_CACHE === "1"
+          ? { target: "http://127.0.0.1:8790", changeOrigin: true }
+          : {
+              target: "https://dao.won.onl",
+              changeOrigin: true,
+              rewrite: (p) => p.replace(/^\/cache/, "/civic"),
+            },
     },
   },
   base: process.env.VITE_BASE || "/",

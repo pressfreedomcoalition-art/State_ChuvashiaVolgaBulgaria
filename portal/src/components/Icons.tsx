@@ -14,21 +14,90 @@ export function Ornament({ className }: { className?: string }) {
   );
 }
 
-const paths: Record<string, string> = {
-  home: "M4 12 L12 4 L20 12 V20 H15 V14 H9 V20 H4 Z",
-  id: "M4 6 H20 V18 H4 Z M7 10 H13 M7 13 H11",
-  vote: "M5 17 H19 M8 17 V9 L12 6 L16 9 V17",
-  people: "M8 10 A3 3 0 1 0 8 9.9 M16 10 A3 3 0 1 0 16 9.9 M4 18 C4 14 20 14 20 18",
-  chest: "M4 8 H20 V18 H4 Z M4 8 L12 13 L20 8",
-  coin: "M12 5 A7 7 0 1 0 12 19 A7 7 0 1 0 12 5 M9 12 H15",
-  gear: "M10 4 H14 L15 7 L18 8 L19 12 L16 14 L15 17 H9 L8 14 L5 12 L6 8 L9 7 Z",
-  out: "M10 5 H5 V19 H10 M10 12 H19 M15 8 L19 12 L15 16",
-};
+export type IconName = "home" | "id" | "vote" | "people" | "chest" | "coin" | "gear" | "out" | "shield" | "wallet";
 
-export function Icon({ name }: { name: keyof typeof paths }) {
+/** Stroke icons — readable at 18–24px in bottom nav. */
+export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d={paths[name]} />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {name === "home" ? (
+        <>
+          <path d="M4 11.5 12 4l8 7.5" />
+          <path d="M7 10.5V20h10v-9.5" />
+        </>
+      ) : null}
+      {name === "id" ? (
+        <>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <circle cx="9" cy="12" r="2" />
+          <path d="M14 10h5M14 14h4" />
+        </>
+      ) : null}
+      {name === "vote" ? (
+        <>
+          <path d="M12 3v12" />
+          <path d="m8 7 4-4 4 4" />
+          <path d="M5 21h14" />
+          <path d="M8 21V15h8v6" />
+        </>
+      ) : null}
+      {name === "people" ? (
+        <>
+          <circle cx="9" cy="8" r="3" />
+          <circle cx="17" cy="9" r="2.5" />
+          <path d="M3 19c0-3 3-5 6-5s6 2 6 5" />
+          <path d="M14.5 19c.3-2 2-3.5 4.5-3.5 1.2 0 2.3.4 3 1" />
+        </>
+      ) : null}
+      {name === "chest" ? (
+        <>
+          <path d="M4 9h16v10H4z" />
+          <path d="M4 9 12 14l8-5" />
+          <path d="M12 14v5" />
+        </>
+      ) : null}
+      {name === "coin" ? (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 7v10M9.5 9.5c.8-1 2-1.5 2.5-1.5s1.7.5 2.5 1.5M9.5 14.5c.8 1 2 1.5 2.5 1.5s1.7-.5 2.5-1.5" />
+        </>
+      ) : null}
+      {name === "gear" ? (
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 3v2.5M12 18.5V21M4.9 6.5l1.8 1.8M17.3 15.7l1.8 1.8M3 12h2.5M18.5 12H21M4.9 17.5l1.8-1.8M17.3 8.3l1.8-1.8" />
+        </>
+      ) : null}
+      {name === "out" ? (
+        <>
+          <path d="M10 5H5v14h5" />
+          <path d="M14 12H5" />
+          <path d="m16 8 4 4-4 4" />
+        </>
+      ) : null}
+      {name === "shield" ? (
+        <>
+          <path d="M12 3 5 6v5c0 4.5 3 8 7 9 4-1 7-4.5 7-9V6l-7-3z" />
+          <path d="m9 12 2 2 4-4" />
+        </>
+      ) : null}
+      {name === "wallet" ? (
+        <>
+          <path d="M3 7h15a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H5a2 2 0 0 1-2-2V7z" />
+          <path d="M3 7V5a2 2 0 0 1 2-2h11" />
+          <circle cx="17" cy="13.5" r="1" fill="currentColor" stroke="none" />
+        </>
+      ) : null}
     </svg>
   );
 }

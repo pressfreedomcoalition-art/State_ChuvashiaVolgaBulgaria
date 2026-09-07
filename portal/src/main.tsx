@@ -9,12 +9,14 @@ import { tonConnectManifestUrl } from "./lib/config";
 import { bootAutoFix } from "./lib/autoFix";
 import { bootBugLog } from "./lib/bugLog";
 import { bootTelegram } from "./lib/telegram";
+import { applyLang, resolveInitialLang } from "./lib/i18n";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./styles/global.css";
 
 bootBugLog();
 bootAutoFix();
 bootTelegram();
+applyLang(resolveInitialLang());
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 

@@ -77,3 +77,6 @@ export const TG_BOT_URL =
 export const TG_BOT_USERNAME = "bulgaria_state_bot";
 
 export const TONCONNECT_MANIFEST = tonConnectManifestUrl();
+
+/** Official Chuvash Republic flag — cabinet brand mark. */
+export const CABINET_LOGO = `${(import.meta.env.BASE_URL || "/").replace(/\/?$/, "/")}chuvash-flag.svg`;

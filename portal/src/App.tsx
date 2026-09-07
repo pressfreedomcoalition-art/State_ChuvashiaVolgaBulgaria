@@ -5,6 +5,7 @@ import { AuthReturn } from "./pages/AuthReturn";
 import { Citizenship } from "./pages/Citizenship";
 import { Passport } from "./pages/Passport";
 import { Referendums } from "./pages/Referendums";
+import { CreateReferendum } from "./pages/CreateReferendum";
 import { ReferendumDetail } from "./pages/ReferendumDetail";
 import { Treasury } from "./pages/Treasury";
 import { Council } from "./pages/Council";
@@ -23,6 +24,7 @@ export function App() {
         <Route path="/citizenship" element={<Citizenship />} />
         <Route path="/passport" element={<Passport />} />
         <Route path="/referendums" element={<Referendums />} />
+        <Route path="/referendums/new" element={<CreateReferendum />} />
         <Route path="/referendums/:address" element={<ReferendumDetail />} />
         <Route path="/treasury" element={<Treasury />} />
         <Route path="/council" element={<Council />} />

@@ -1,23 +1,61 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useTonAddress } from "@tonconnect/ui-react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { votingStatus, type VotingState } from "../lib/civic";
 import { castCivicVote } from "../lib/civicActions";
+import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { hasLocalVault } from "../lib/passport";
 
 export function ReferendumDetail() {
   const { address = "" } = useParams();
-  const { tt, loadVoting, votings } = useApp();
+  const [params] = useSearchParams();
+  const { tt, loadVoting, votings, refresh } = useApp();
   const wallet = useTonAddress();
+  const [ui] = useTonConnectUI();
   const [state, setState] = useState<VotingState | null>(null);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState("");
+  const pending = readPendingLaunch(address);
 
   useEffect(() => {
     void loadVoting(address).then(setState);
   }, [address, loadVoting]);
+
+  useEffect(() => {
+    if (params.get("launch") !== "1" || !pending?.opts?.length || !wallet) return;
+    let cancelled = false;
+    void (async () => {
+      setBusy(true);
+      setInfo("Ждём деплой опроса…");
+      await new Promise((r) => setTimeout(r, 12_000));
+      if (cancelled) return;
+      setInfo("Добавляем опции и запускаем…");
+      try {
+        await launchVoting({
+          ui,
+          voting: address,
+          optionTitles: pending.opts,
+          executable: pending.executable,
+        });
+        if (cancelled) return;
+        setInfo("Запущено");
+        await refresh();
+        const st = await loadVoting(address);
+        setState(st);
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, params, wallet]);
 
   const row = votings.find((v) => (v.address || v.voting) === address);
   const title = state?.title || row?.title || address;
@@ -37,7 +75,6 @@ export function ReferendumDetail() {
         options.find((o) => (o.title || o.text || "").toLowerCase().includes((label || "").toLowerCase()))
           ?.address;
       if (!opt && options[0]?.address) {
-        // pick by index: yes=0 no=1 heuristic
         const idx = label === "no" || label === tt("no") ? 1 : 0;
         const chosen = options[idx]?.address || options[0]?.address;
         if (!chosen) throw new Error("Нет адреса опции в кеше — дождитесь votingState");
@@ -56,6 +93,57 @@ export function ReferendumDetail() {
     }
   }
 
+  async function doLaunch() {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    const titles =
+      pending?.opts?.length && pending.opts.length >= 2
+        ? pending.opts
+        : options.map((o) => o.title || o.text || "").filter(Boolean);
+    if (titles.length < 2 && !pending?.opts?.length) {
+      setErr("Нужны минимум 2 опции (создайте голосование с вариантами или дождитесь кеша)");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await launchVoting({
+        ui,
+        voting: address,
+        optionTitles: titles.length >= 2 ? titles : pending!.opts,
+        executable: pending?.executable,
+      });
+      setInfo("Запущено");
+      await refresh();
+      setState(await loadVoting(address));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doFinalize() {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await finalizeVoting({ ui, voting: address });
+      setInfo("Итог отправлен");
+      await refresh();
+      setState(await loadVoting(address));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
       <Link to="/referendums" className="muted">
@@ -63,11 +151,21 @@ export function ReferendumDetail() {
       </Link>
       <h1 className="page-title">{title}</h1>
       <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
-        {st === "finished" ? tt("votingDone") : tt("votingOpen")}
+        {st === "finished" ? tt("votingDone") : st === "pending" ? tt("votingPending") : tt("votingOpen")}
       </span>
       {desc ? (
         <div className="card">
           <p>{desc}</p>
+        </div>
+      ) : null}
+
+      {st === "pending" || pending ? (
+        <div className="card">
+          <h3>Запуск</h3>
+          <p className="muted">Добавить опции и отправить «start» на контракт опроса.</p>
+          <button className="btn btn-primary" disabled={busy} onClick={() => void doLaunch()}>
+            Запустить референдум
+          </button>
         </div>
       ) : null}
 
@@ -94,12 +192,12 @@ export function ReferendumDetail() {
             );
           })}
         </div>
-      ) : (
+      ) : st === "active" || st === "unknown" ? (
         <div className="card">
           <h3>{tt("vote")}</h3>
-          <p className="muted">Голос уходит silent-relay с вашим presentation (Face ID), без открытия dao UI.</p>
+          <p className="muted">{tt("voteSilentHint")}</p>
           {options.length >= 2 ? (
-            <div className="row">
+            <div className="row" style={{ flexWrap: "wrap" }}>
               {options.map((o) => (
                 <button
                   key={o.address || o.title}
@@ -121,9 +219,14 @@ export function ReferendumDetail() {
               </button>
             </div>
           )}
-          {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+          <button className="btn btn-ghost" disabled={busy} onClick={() => void doFinalize()} style={{ marginTop: 12 }}>
+            Подвести итог
+          </button>
         </div>
-      )}
+      ) : null}
+
+      {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
+      {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
     </div>
   );
 }

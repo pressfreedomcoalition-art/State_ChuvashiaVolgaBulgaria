@@ -3,6 +3,11 @@ import { civicBase, DAO_ADDRESS } from "./config";
 import { cacheGet } from "./civic";
 import { ensurePresentation, issuePassport } from "./passport";
 import { parseContainerSides, resolveJettonWallet } from "./tonResolve";
+import { t, getLang } from "./i18n";
+
+function reason(key: string) {
+  return t(getLang(), key);
+}
 
 /** Minimal sendTransaction surface from TonConnectUI. */
 type TonTxUi = {
@@ -33,7 +38,7 @@ export async function resolveDaoModules(dao = DAO_ADDRESS) {
 }
 
 export async function fetchCitizenshipStatus(dao = DAO_ADDRESS) {
-  const presentation = await ensurePresentation({ reason: "Статус гражданства" });
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonStatus") });
   return civicPost<{
     ok: boolean;
     citizen?: boolean;
@@ -52,7 +57,7 @@ export async function castCivicVote(opts: {
 }) {
   const presentation = await ensurePresentation({
     voting: opts.voting,
-    reason: "Голос гражданина",
+    reason: reason("unlockReasonVote"),
   });
   let civicSource = opts.civicSource;
   if (!civicSource) {
@@ -71,7 +76,7 @@ export async function castCivicVote(opts: {
 }
 
 export async function fetchGasStatus() {
-  const presentation = await ensurePresentation({ reason: "Баланс газа" });
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonGas") });
   return civicPost<{ ok: boolean; balanceTon?: number; nano?: string }>("/v1/gas/status", {
     presentation,
   });
@@ -97,7 +102,7 @@ export async function claimCitizenshipPay(opts: {
   if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
   if (!mods.pathPay) throw new Error("path_pay_missing");
 
-  const presentation = await ensurePassportPresentation("Оплата пути гражданства");
+  const presentation = await ensurePassportPresentation(reason("unlockReasonPayPath"));
   const st = await civicPost<{ ok: boolean; commit?: string }>("/v1/citizenship/status", {
     presentation,
     dao: DAO_ADDRESS,
@@ -165,7 +170,7 @@ export async function claimCitizenshipPay(opts: {
 export async function claimCitizenshipWallet(wallet: string) {
   const mods = await resolveDaoModules();
   if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
-  const presentation = await ensurePassportPresentation("Путь Wallet/NFT");
+  const presentation = await ensurePassportPresentation(reason("unlockReasonWalletPath"));
   return civicPost<{
     ok: boolean;
     paths?: string[];
@@ -198,7 +203,7 @@ export async function claimCitizenshipDocs(opts: {
 }) {
   const mods = await resolveDaoModules();
   if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
-  const presentation = await ensurePassportPresentation("Документы / KYC");
+  const presentation = await ensurePassportPresentation(reason("unlockReasonDocsPath"));
   const res = await fetch(`${civicBase()}/v1/citizenship/claim-docs`, {
     method: "POST",
     headers: { "content-type": "application/json" },

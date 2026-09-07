@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { logReactError } from "../lib/bugLog";
+import { getLang, t } from "../lib/i18n";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -21,17 +22,17 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="auth">
           <div className="auth-card" style={{ gridTemplateColumns: "1fr", maxWidth: 520 }}>
             <div className="auth-form">
-              <h2>Ошибка интерфейса</h2>
+              <h2>{t(getLang(), "uiError")}</h2>
               <p className="muted">{this.state.error.message}</p>
               <button className="btn btn-primary btn-wide" type="button" onClick={() => location.reload()}>
-                Перезагрузить
+                {t(getLang(), "reload")}
               </button>
               <button
                 className="btn btn-ghost btn-wide"
                 type="button"
                 onClick={() => this.setState({ error: null })}
               >
-                Попробовать снова
+                {t(getLang(), "tryAgain")}
               </button>
             </div>
           </div>

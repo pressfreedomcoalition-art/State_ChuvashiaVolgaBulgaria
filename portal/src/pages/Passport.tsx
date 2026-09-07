@@ -35,7 +35,7 @@ export function Passport() {
   async function refreshBindStatus() {
     try {
       if (!hasLocalVault()) return;
-      const presentation = await ensurePresentation({ reason: "Статус привязки кошелька" });
+      const presentation = await ensurePresentation({ reason: tt("unlockReasonBindStatus") });
       const st = await fetchPassportBackupStatus(presentation);
       setBound(st.walletBound);
       if (!st.hasWalletBackup && !localStorage.getItem(NUDGE_KEY)) setShowNudge(true);
@@ -52,8 +52,8 @@ export function Passport() {
   async function unlock() {
     setErr("");
     try {
-      await unlockPassport("Разблокировать паспорт");
-      setMsg("Паспорт разблокирован");
+      await unlockPassport(tt("unlockReasonUnlock"));
+      setMsg(tt("passportUnlocked"));
       await refreshBindStatus();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -76,17 +76,17 @@ export function Passport() {
     try {
       if (!wallet) {
         ui.openModal();
-        throw new Error("Подключите кошелёк");
+        throw new Error(tt("connectWallet"));
       }
       const rec = getSession() || loadPassportVault();
       if (!rec) throw new Error("no_passport");
-      if (!getSession()) await unlockPassport("Привязать кошелёк");
+      if (!getSession()) await unlockPassport(tt("unlockReasonBind"));
       const presentation = await createPresentation(getSession() || rec);
       const out = await bindWalletBackup(presentation, getSession() || rec, ui);
       localStorage.setItem(NUDGE_KEY, "1");
       setShowNudge(false);
       setBound(out.wallet);
-      setMsg("Кошелёк привязан — им можно восстановить паспорт на другом устройстве");
+      setMsg(tt("walletBoundOk"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -99,10 +99,10 @@ export function Passport() {
     setBusy(true);
     setErr("");
     try {
-      const presentation = await ensurePresentation({ reason: "Отвязать кошелёк" });
+      const presentation = await ensurePresentation({ reason: tt("unlockReasonUnbind") });
       await unbindWalletBackup(presentation, bound);
       setBound(null);
-      setMsg("Кошелёк отвязан");
+      setMsg(tt("walletUnboundOk"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -114,76 +114,77 @@ export function Passport() {
     <div className="stack">
       <h1 className="page-title">{tt("passport")}</h1>
       <div className="card">
-        <p>
-          Civic-паспорт хранится в этом приложении (Face ID Telegram
-          {biometricAvailable() ? " доступен" : " недоступен на этом клиенте"}).
-        </p>
+        <p>{tt("passportBioHint", { bio: biometricAvailable() ? tt("bioOn") : tt("bioOff") })}</p>
         <p className="muted">
-          Локальный vault: {hasLocalVault() ? "есть" : "нет"} · сессия:{" "}
-          {unlocked ? "разблокирована" : "заблокирована"}
+          {tt("vaultLine", {
+            vault: hasLocalVault() ? tt("vaultYes") : tt("vaultNo"),
+            session: unlocked ? tt("sessionOn") : tt("sessionOff"),
+          })}
         </p>
         {health?.gas ? (
           <p className="muted">
-            Тарифы: grant {health.gas.grantDebitTon} · cast {health.gas.castDebitTon} · finalize{" "}
-            {health.gas.finalizeDebitTon} TON
+            {tt("gasTariffs", {
+              grant: health.gas.grantDebitTon ?? 0,
+              cast: health.gas.castDebitTon ?? 0,
+              finalize: health.gas.finalizeDebitTon ?? 0,
+            })}
           </p>
         ) : null}
         <div className="row">
           {hasLocalVault() ? (
             <button className="btn btn-primary" onClick={() => void unlock()}>
-              Face ID / разблокировать
+              {tt("faceIdUnlock")}
             </button>
           ) : (
             <button
               className="btn btn-primary"
               onClick={() =>
                 void issuePassport()
-                  .then((r) => setMsg(r.restorePhrase ? `Фраза: ${r.restorePhrase}` : "Паспорт выдан"))
+                  .then((r) => setMsg(r.restorePhrase ? tt("phraseIssued", { phrase: r.restorePhrase }) : tt("passportIssued")))
                   .catch((e) => setErr(String(e)))
               }
             >
-              Выдать паспорт
+              {tt("issuePassportBtn")}
             </button>
           )}
           <button className="btn btn-ghost" disabled={!hasLocalVault()} onClick={() => void gasBal()}>
-            Баланс газа
+            {tt("gasBalanceBtn")}
           </button>
           <button
             className="btn btn-ghost"
             onClick={() => {
               clearPassport();
-              setMsg("Паспорт очищен с этого устройства");
+              setMsg(tt("passportCleared"));
             }}
           >
-            Сбросить локально
+            {tt("resetLocal")}
           </button>
         </div>
-        {gas ? <p>Prepaid газ: {gas} TON</p> : null}
+        {gas ? <p>{tt("prepaidGas", { gas })}</p> : null}
         {msg ? <p style={{ color: "var(--ok)" }}>{msg}</p> : null}
         {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
       </div>
 
       {hasLocalVault() ? (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Восстановление через кошелёк</h3>
+          <h3 style={{ marginTop: 0 }}>{tt("walletRestoreTitle")}</h3>
           {showNudge ? (
-            <p className="muted">
-              Один раз: привяжите кошелёк к паспорту (как seed). Лучше отдельный «гражданский»
-              кошелёк — привязка снижает анонимность. Потеря кошелька = риск паспорта.
-            </p>
+            <p className="muted">{tt("walletBindNudge")}</p>
           ) : (
             <p className="muted">
-              Статус: {bound ? `привязан ${bound.slice(0, 8)}…` : "не привязан"}
+              {tt("bindStatusLine", {
+                status: bound ? tt("boundTo", { addr: bound.slice(0, 8) }) : tt("notBound"),
+              })}
             </p>
           )}
           <div className="row">
             {!bound ? (
               <button className="btn btn-primary" disabled={busy} onClick={() => void doBind()}>
-                Привязать кошелёк
+                {tt("bindWallet")}
               </button>
             ) : (
               <button className="btn btn-ghost" disabled={busy} onClick={() => void doUnbind()}>
-                Отвязать
+                {tt("unbind")}
               </button>
             )}
             {showNudge ? (
@@ -194,7 +195,7 @@ export function Passport() {
                   setShowNudge(false);
                 }}
               >
-                Позже
+                {tt("later")}
               </button>
             ) : null}
           </div>

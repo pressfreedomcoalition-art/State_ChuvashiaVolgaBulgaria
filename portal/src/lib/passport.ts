@@ -1,5 +1,6 @@
 import * as jose from "jose";
 import { civicBase } from "./config";
+import { t, getLang } from "./i18n";
 import {
   authenticateBiometric,
   biometricAvailable,
@@ -10,6 +11,7 @@ import {
   openPassportSession,
   savePassportVault,
   unlockPassport,
+  unlockPassportSilent,
   type PassportRecord,
 } from "./passportVault";
 
@@ -129,7 +131,7 @@ export async function restoreFromPhrase(phrase: string): Promise<PassportRecord>
   savePassportVault(rec);
   if (biometricAvailable()) {
     try {
-      await authenticateBiometric("Привязать Face ID к кабинету");
+      await authenticateBiometric(t(getLang(), "unlockReasonBindFace"));
     } catch {
       /* phrase restore still ok without bio */
     }
@@ -139,7 +141,7 @@ export async function restoreFromPhrase(phrase: string): Promise<PassportRecord>
 
 export async function issuePassport(): Promise<PassportRecord & { restorePhrase?: string }> {
   if (biometricAvailable()) {
-    await authenticateBiometric("Выдать паспорт");
+    await authenticateBiometric(t(getLang(), "unlockReasonIssue"));
   }
   const keys = await createHolderKeyPair();
   const r = await fetch(`${verifierBase()}/v1/passport/issue`, {
@@ -212,17 +214,27 @@ export async function ensurePresentation(opts: {
     /* ignore */
   }
 
-  let rec = getSession() || loadPassportVault();
-  if (!rec) throw new Error("no_passport");
-  if (!getSession()) {
-    if (biometricAvailable()) {
-      await authenticateBiometric(opts.reason || "Подтвердите паспорт");
-    }
-    openPassportSession(rec);
-  } else if (biometricAvailable() && opts.reason) {
-    await authenticateBiometric(opts.reason);
+  const unlocked = getSession();
+  if (unlocked) {
+    // Already unlocked this session — never re-prompt Face ID (TG bio callbacks hang).
+    return createPresentation(unlocked, { voting: opts.voting });
   }
+
+  const rec = loadPassportVault();
+  if (!rec) throw new Error("no_passport");
+  if (biometricAvailable()) {
+    await authenticateBiometric(opts.reason || t(getLang(), "unlockReasonConfirm"));
+  }
+  openPassportSession(rec);
   return createPresentation(rec, { voting: opts.voting });
 }
 
-export { hasLocalVault, getSession, unlockPassport, loadPassportVault, clearPassport, biometricAvailable };
+export {
+  hasLocalVault,
+  getSession,
+  unlockPassport,
+  unlockPassportSilent,
+  loadPassportVault,
+  clearPassport,
+  biometricAvailable,
+};

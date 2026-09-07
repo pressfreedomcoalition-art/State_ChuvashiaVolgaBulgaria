@@ -1,4 +1,5 @@
 import type { JWK } from "jose";
+import { t, getLang } from "./i18n";
 
 const VAULT_KEY = "chv_passport_vault_v1";
 const SESSION_KEY = "chv_passport_session_v1";
@@ -41,38 +42,81 @@ export function biometricAvailable(): boolean {
   }
 }
 
-function initBio(): Promise<TgBio | null> {
+/** Telegram BiometricManager callbacks often never fire (esp. without a fresh tap). */
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
-    const bio = getBio();
-    if (!bio) {
-      resolve(null);
-      return;
-    }
-    try {
-      bio.init(() => resolve(bio));
-      setTimeout(() => resolve(bio), 800);
-    } catch {
-      resolve(bio);
-    }
+    let done = false;
+    const t = window.setTimeout(() => {
+      if (done) return;
+      done = true;
+      resolve(fallback);
+    }, ms);
+    p.then(
+      (v) => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(fallback);
+      },
+    );
   });
+}
+
+const BIO_INIT_MS = 2_500;
+const BIO_CB_MS = 12_000;
+
+function initBio(): Promise<TgBio | null> {
+  const bio = getBio();
+  if (!bio) return Promise.resolve(null);
+  return withTimeout(
+    new Promise<TgBio>((resolve) => {
+      try {
+        bio.init(() => resolve(bio));
+      } catch {
+        resolve(bio);
+      }
+    }),
+    BIO_INIT_MS,
+    bio,
+  );
 }
 
 export async function authenticateBiometric(reason: string): Promise<boolean> {
   const bio = await initBio();
   if (!bio?.isBiometricAvailable) throw new Error("biometric_unavailable");
-  await new Promise<void>((resolve) => {
-    if (bio.isAccessGranted) {
-      resolve();
-      return;
-    }
-    bio.requestAccess({ reason }, () => resolve());
-  });
-  return new Promise((resolve, reject) => {
-    bio.authenticate({ reason }, (ok) => {
-      if (ok) resolve(true);
-      else reject(new Error("biometric denied"));
-    });
-  });
+  if (!bio.isAccessGranted) {
+    const granted = await withTimeout(
+      new Promise<boolean>((r) => {
+        try {
+          bio.requestAccess({ reason }, (ok) => r(!!ok));
+        } catch {
+          r(false);
+        }
+      }),
+      BIO_CB_MS,
+      false,
+    );
+    if (!granted) throw new Error("biometric_timeout");
+  }
+  const auth = await withTimeout(
+    new Promise<{ ok: boolean }>((r) => {
+      try {
+        bio.authenticate({ reason }, (ok) => r({ ok: !!ok }));
+      } catch {
+        r({ ok: false });
+      }
+    }),
+    BIO_CB_MS,
+    { ok: false },
+  );
+  if (!auth.ok) throw new Error("biometric denied");
+  return true;
 }
 
 export function hasLocalVault(): boolean {
@@ -136,12 +180,23 @@ export function clearPassport() {
 }
 
 /** Unlock local vault; Face ID in Telegram Mini App when available. */
-export async function unlockPassport(reason = "Разблокировать паспорт"): Promise<PassportRecord> {
+export async function unlockPassport(reason?: string): Promise<PassportRecord> {
   const rec = loadPassportVault();
   if (!rec) throw new Error("no_vault");
   if (biometricAvailable()) {
-    await authenticateBiometric(reason);
+    await authenticateBiometric(reason || t(getLang(), "unlockReasonUnlock"));
   }
+  openPassportSession(rec);
+  return rec;
+}
+
+/**
+ * Open vault for API calls without Face ID.
+ * Used on Mini App boot so citizens land on votings immediately (TG bio hangs without a tap).
+ */
+export function unlockPassportSilent(): PassportRecord | null {
+  const rec = loadPassportVault();
+  if (!rec) return null;
   openPassportSession(rec);
   return rec;
 }

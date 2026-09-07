@@ -32,12 +32,16 @@ export type DaoConfig = {
 export type VotingRow = {
   address?: string;
   voting?: string;
+  /** Cache/DAO list often uses `id` for the voting contract. */
+  id?: string;
   title?: string;
   description?: string;
   status?: string;
   kind?: number;
   endsAt?: number;
   options?: VotingOption[];
+  notStarted?: boolean;
+  awaitingFinalize?: boolean;
 };
 
 export type VotingOption = {
@@ -61,7 +65,13 @@ export type VotingState = {
 export type TreasurySnap = {
   ton?: string | number;
   jetton?: string | number;
-  jettons?: Array<{ symbol?: string; amount?: string | number; master?: string }>;
+  jettons?: Array<{
+    symbol?: string;
+    amount?: string | number;
+    master?: string;
+    wallet?: string;
+    decimals?: number;
+  }>;
   governance?: string | number;
 };
 
@@ -210,20 +220,33 @@ export function formatTon(nano: string | number | undefined) {
 }
 
 export function votingAddress(row: VotingRow) {
-  return row.address || row.voting || "";
+  return row.address || row.voting || row.id || "";
 }
 
 export function votingStatus(row: VotingRow | VotingState | null | undefined) {
+  if (row && "notStarted" in row && row.notStarted) return "pending";
+  if (row && "awaitingFinalize" in row && row.awaitingFinalize) return "pending";
   const s = String(row?.status || "").toLowerCase();
   if (s.includes("finish") || s === "done" || s === "closed") return "finished";
   if (s.includes("active") || s.includes("run") || s === "open") return "active";
-  if (s.includes("pending") || s.includes("wait")) return "pending";
+  if (s.includes("pending") || s.includes("wait") || s.includes("creat")) return "pending";
   return s || "unknown";
 }
 
 export function officialDaoUrl(extra = "") {
   const hash = `#dao=${DAO_ADDRESS}${extra}`;
   return `${OFFICIAL_UI}/${hash}`;
+}
+
+/** Face ID unlock in official DAO → return presentation to CHV `/auth/return`. */
+export function officialExportPresentUrl(returnUrl: string, app = "CHV Cabinet") {
+  const q = new URLSearchParams({
+    exportPresent: "1",
+    dao: DAO_ADDRESS,
+    return: returnUrl,
+    app,
+  });
+  return `${OFFICIAL_UI}/#${q.toString()}`;
 }
 
 export function officialEligUrl(returnUrl: string) {
