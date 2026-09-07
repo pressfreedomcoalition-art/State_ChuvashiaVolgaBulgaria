@@ -1,15 +1,17 @@
 name: Deploy CHV cache
 
-# Publishes cache-server/ to the dao VPS (same host as civic).
+# Own State VPS only (cache-server). Frontend stays on GitHub Pages.
 on:
-  # Не деплоим автоматически на dao-VPS — свой кеш только на отдельном сервере State.
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type OWN_VPS to publish cache-server (not the shared dao host)"
+        description: "Type OWN_VPS to publish cache-server"
         required: true
         default: ""
-
+      cache_host:
+        description: "Public cache hostname for nginx/TLS (A → this VPS)"
+        required: true
+        default: "cache.chv.blc.cab"
 
 jobs:
   deploy:
@@ -21,17 +23,19 @@ jobs:
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.NEW_SSH }}
 
-      - name: Publish cache-server to VPS
+      - name: Publish cache-server to own VPS
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          NEW_PASS: ${{ secrets.NEW_PASS }}
+          CACHE_HOST: ${{ github.event.inputs.cache_host }}
         run: |
           set -euo pipefail
-          HOST="${SSH_HOST:-185.237.207.81}"
-          USER_="${SSH_USER:-root}"
+          HOST="${SSH_HOST:?set secret SSH_HOST}"
+          USER_="${SSH_USER:?set secret SSH_USER}"
           PORT="${SSH_PORT:-22}"
           SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
@@ -42,41 +46,72 @@ jobs:
             --exclude=node_modules --exclude=data --exclude=.env \
             -C cache-server .
 
+          umask 077
+          printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
+
           "${SCP[@]}" "$TMP/bundle.tar" \
+            "$TMP/chv-sudo.pass" \
             deploy/chv-cache.service \
             deploy/chv-cache-warm.service \
             deploy/chv-cache-warm.timer \
-            deploy/patch-nginx-chv-cache.sh \
+            deploy/nginx-cache.chv.example.conf \
             "${USER_}@${HOST}:/tmp/"
 
-          "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+          "${SSH[@]}" "${USER_}@${HOST}" env CACHE_HOST="$CACHE_HOST" /bin/bash <<'REMOTE'
           set -euo pipefail
-          install -d -o www-data -g www-data /opt/chv-cache /opt/chv-cache/data
-          if [[ -f /opt/chv-cache/.env ]]; then
-            cp -a /opt/chv-cache/.env /tmp/chv-cache.env.bak
+          SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
+          cleanup() {
+            rm -f /tmp/chv-sudo.pass /tmp/bundle.tar \
+              /tmp/chv-cache.service /tmp/chv-cache-warm.service \
+              /tmp/chv-cache-warm.timer /tmp/nginx-cache.chv.example.conf
+          }
+          trap cleanup EXIT
+
+          if ! command -v node >/dev/null 2>&1 || ! node -v | grep -qE 'v(2[0-9]|[3-9])'; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | SUDO bash -
+            SUDO apt-get install -y nodejs
           fi
-          tar -xf /tmp/bundle.tar -C /opt/chv-cache
+          SUDO apt-get update -y
+          SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y nginx certbot python3-certbot-nginx
+
+          getent passwd www-data >/dev/null || SUDO useradd -r -s /usr/sbin/nologin www-data
+
+          SUDO install -d -o www-data -g www-data /opt/chv-cache /opt/chv-cache/data
+          if [[ -f /opt/chv-cache/.env ]]; then
+            SUDO cp -a /opt/chv-cache/.env /tmp/chv-cache.env.bak
+          fi
+          SUDO tar -xf /tmp/bundle.tar -C /opt/chv-cache
           if [[ -f /tmp/chv-cache.env.bak ]]; then
-            mv /tmp/chv-cache.env.bak /opt/chv-cache/.env
+            SUDO mv /tmp/chv-cache.env.bak /opt/chv-cache/.env
           elif [[ ! -f /opt/chv-cache/.env ]]; then
             printf '%s\n' \
               'PORT=8790' \
               'DAO_ADDRESS=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx' \
               'CORS_ORIGIN=https://chv.blc.cab,http://localhost:5173' \
               'DATA_DIR=/opt/chv-cache/data' \
-              > /opt/chv-cache/.env
+              | SUDO tee /opt/chv-cache/.env >/dev/null
           fi
-          cd /opt/chv-cache
-          npm ci --omit=dev
-          chown -R www-data:www-data /opt/chv-cache
-          install -m 644 /tmp/chv-cache.service /etc/systemd/system/chv-cache.service
-          install -m 644 /tmp/chv-cache-warm.service /etc/systemd/system/chv-cache-warm.service
-          install -m 644 /tmp/chv-cache-warm.timer /etc/systemd/system/chv-cache-warm.timer
-          systemctl daemon-reload
-          systemctl enable --now chv-cache.service
-          systemctl enable --now chv-cache-warm.timer
-          systemctl restart chv-cache.service
-          /bin/bash /tmp/patch-nginx-chv-cache.sh || true
+          SUDO bash -c 'cd /opt/chv-cache && npm ci --omit=dev'
+          SUDO chown -R www-data:www-data /opt/chv-cache
+
+          SUDO install -m 644 /tmp/chv-cache.service /etc/systemd/system/chv-cache.service
+          SUDO install -m 644 /tmp/chv-cache-warm.service /etc/systemd/system/chv-cache-warm.service
+          SUDO install -m 644 /tmp/chv-cache-warm.timer /etc/systemd/system/chv-cache-warm.timer
+
+          NGINX_CONF="/etc/nginx/sites-available/${CACHE_HOST}.conf"
+          SUDO sed "s/cache.chv.blc.cab/${CACHE_HOST}/g" /tmp/nginx-cache.chv.example.conf | SUDO tee "$NGINX_CONF" >/dev/null
+          SUDO ln -sfn "$NGINX_CONF" "/etc/nginx/sites-enabled/${CACHE_HOST}.conf"
+          # drop default site if it steals :80
+          SUDO rm -f /etc/nginx/sites-enabled/default
+          SUDO nginx -t
+          SUDO systemctl enable --now nginx
+          SUDO systemctl reload nginx
+
+          SUDO systemctl daemon-reload
+          SUDO systemctl enable --now chv-cache.service
+          SUDO systemctl enable --now chv-cache-warm.timer
+          SUDO systemctl restart chv-cache.service
+
           for i in 1 2 3 4 5 6 7 8; do
             if curl -fsS http://127.0.0.1:8790/health; then
               echo
@@ -86,6 +121,14 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8790/health
           echo
-          curl -fsS https://dao.won.onl/chv-cache/health
-          echo
+
+          if SUDO certbot --nginx -d "$CACHE_HOST" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
+            curl -fsS "https://${CACHE_HOST}/health" || true
+            echo
+          else
+            echo "::warning::certbot skipped/failed — point A ${CACHE_HOST} → this VPS, then re-run deploy"
+          fi
+
+          SUDO systemctl --no-pager is-active chv-cache.service
+          SUDO systemctl --no-pager is-active chv-cache-warm.timer
           REMOTE
