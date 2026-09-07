@@ -37,8 +37,33 @@ jobs:
           HOST="${SSH_HOST:?set secret SSH_HOST}"
           USER_="${SSH_USER:?set secret SSH_USER}"
           PORT="${SSH_PORT:-22}"
-          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          SSH_BASE=(-p "$PORT" -o StrictHostKeyChecking=accept-new)
+          SSH=(ssh "${SSH_BASE[@]}" -o BatchMode=yes)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+
+          # Prefer login user; if no passwordless/password sudo, fall back to root (key or NEW_PASS).
+          DEPLOY_USER="$USER_"
+          if "${SSH[@]}" "${USER_}@${HOST}" "sudo -n true" 2>/dev/null; then
+            echo "Using ${USER_} with passwordless sudo"
+          elif "${SSH[@]}" "${USER_}@${HOST}" "sudo -S -p '' true" <<<"$NEW_PASS" 2>/dev/null; then
+            echo "Using ${USER_} with sudo via NEW_PASS"
+          elif "${SSH[@]}" "root@${HOST}" "true" 2>/dev/null; then
+            echo "Using root via NEW_SSH key"
+            DEPLOY_USER=root
+          else
+            sudo apt-get update -y && sudo apt-get install -y sshpass
+            export SSHPASS="$NEW_PASS"
+            if sshpass -e ssh "${SSH_BASE[@]}" -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+              "root@${HOST}" "true"; then
+              echo "Using root via NEW_PASS"
+              DEPLOY_USER=root
+              SSH=(sshpass -e ssh "${SSH_BASE[@]}" -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+              SCP=(sshpass -e scp -P "$PORT" -o StrictHostKeyChecking=accept-new -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+            else
+              echo "::error::User ${USER_} has no sudo, and root login (key/password) failed. Add mish to sudoers or enable root SSH."
+              exit 1
+            fi
+          fi
 
           TMP=$(mktemp -d)
           trap 'rm -rf "$TMP"' EXIT
@@ -55,11 +80,15 @@ jobs:
             deploy/chv-cache-warm.service \
             deploy/chv-cache-warm.timer \
             deploy/nginx-cache.chv.example.conf \
-            "${USER_}@${HOST}:/tmp/"
+            "${DEPLOY_USER}@${HOST}:/tmp/"
 
-          "${SSH[@]}" "${USER_}@${HOST}" env CACHE_HOST="$CACHE_HOST" /bin/bash <<'REMOTE'
+          "${SSH[@]}" "${DEPLOY_USER}@${HOST}" env CACHE_HOST="$CACHE_HOST" DEPLOY_USER="$DEPLOY_USER" /bin/bash <<'REMOTE'
           set -euo pipefail
-          SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
+          if [[ "${DEPLOY_USER}" == "root" ]]; then
+            SUDO() { "$@"; }
+          else
+            SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
+          fi
           cleanup() {
             rm -f /tmp/chv-sudo.pass /tmp/bundle.tar \
               /tmp/chv-cache.service /tmp/chv-cache-warm.service \
@@ -101,7 +130,6 @@ jobs:
           NGINX_CONF="/etc/nginx/sites-available/${CACHE_HOST}.conf"
           SUDO sed "s/cache.chv.blc.cab/${CACHE_HOST}/g" /tmp/nginx-cache.chv.example.conf | SUDO tee "$NGINX_CONF" >/dev/null
           SUDO ln -sfn "$NGINX_CONF" "/etc/nginx/sites-enabled/${CACHE_HOST}.conf"
-          # drop default site if it steals :80
           SUDO rm -f /etc/nginx/sites-enabled/default
           SUDO nginx -t
           SUDO systemctl enable --now nginx
@@ -111,6 +139,13 @@ jobs:
           SUDO systemctl enable --now chv-cache.service
           SUDO systemctl enable --now chv-cache-warm.timer
           SUDO systemctl restart chv-cache.service
+
+          # If we used root, grant mish passwordless sudo for later deploys
+          if [[ "${DEPLOY_USER}" == "root" ]] && id mish >/dev/null 2>&1; then
+            echo 'mish ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/mish-chv
+            chmod 440 /etc/sudoers.d/mish-chv
+            visudo -cf /etc/sudoers.d/mish-chv
+          fi
 
           for i in 1 2 3 4 5 6 7 8; do
             if curl -fsS http://127.0.0.1:8790/health; then
