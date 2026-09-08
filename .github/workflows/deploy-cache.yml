@@ -10,8 +10,8 @@ on:
         required: true
         default: ""
   schedule:
-    # Refresh tunnel URL into Pages if VPS rebooted
-    - cron: "15 */6 * * *"
+    # Free Pinggy tunnels expire ~60m — refresh URL into Pages often
+    - cron: "*/40 * * * *"
 
 jobs:
   deploy:

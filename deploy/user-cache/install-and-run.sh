@@ -94,7 +94,10 @@ start_pinggy
 
 URL=""
 for i in $(seq 1 45); do
-  URL=$(grep -Eo 'https://[a-zA-Z0-9._/-]+' "${LOGS}/tunnel.log" 2>/dev/null | grep -E 'pinggy|localhost\.run' | head -1 || true)
+  URL=$(grep -Eo 'https://[a-zA-Z0-9._-]+' "${LOGS}/tunnel.log" 2>/dev/null \
+    | grep -E 'pinggy-free\.link|free\.pinggy\.net|a\.pinggy\.link|pinggy\.link|localhost\.run' \
+    | grep -v 'dashboard\.pinggy' \
+    | head -1 || true)
   if [[ -n "$URL" ]]; then
     break
   fi
