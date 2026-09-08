@@ -3,15 +3,11 @@ import { civicBase } from "./config";
 import { t, getLang } from "./i18n";
 import {
   authenticateBiometric,
-  biometricAvailable,
-  clearPassport,
   getSession,
-  hasLocalVault,
   loadPassportVault,
   openPassportSession,
+  probeBiometricAvailable,
   savePassportVault,
-  unlockPassport,
-  unlockPassportSilent,
   type PassportRecord,
 } from "./passportVault";
 
@@ -129,7 +125,7 @@ export async function restoreFromPhrase(phrase: string): Promise<PassportRecord>
   if (!j.ok || !j.ciphertext || !j.salt) throw new Error(j.code || j.error || "restore failed");
   const rec = await decryptPassportRecord(j.ciphertext, j.salt, normalized);
   savePassportVault(rec);
-  if (biometricAvailable()) {
+  if (await probeBiometricAvailable()) {
     try {
       await authenticateBiometric(t(getLang(), "unlockReasonBindFace"));
     } catch {
@@ -140,7 +136,7 @@ export async function restoreFromPhrase(phrase: string): Promise<PassportRecord>
 }
 
 export async function issuePassport(): Promise<PassportRecord & { restorePhrase?: string }> {
-  if (biometricAvailable()) {
+  if (await probeBiometricAvailable()) {
     await authenticateBiometric(t(getLang(), "unlockReasonIssue"));
   }
   const keys = await createHolderKeyPair();
@@ -222,7 +218,7 @@ export async function ensurePresentation(opts: {
 
   const rec = loadPassportVault();
   if (!rec) throw new Error("no_passport");
-  if (biometricAvailable()) {
+  if (await probeBiometricAvailable()) {
     await authenticateBiometric(opts.reason || t(getLang(), "unlockReasonConfirm"));
   }
   openPassportSession(rec);
@@ -237,4 +233,8 @@ export {
   loadPassportVault,
   clearPassport,
   biometricAvailable,
-};
+  probeBiometricAvailable,
+} from "./passportVault";
+
+// re-export types already available via passportVault; keep named exports above
+export type { PassportRecord } from "./passportVault";

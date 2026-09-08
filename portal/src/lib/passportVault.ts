@@ -14,6 +14,7 @@ export type PassportRecord = {
 
 type TgBio = {
   init: (cb?: () => void) => void;
+  isInited?: boolean;
   isBiometricAvailable?: boolean;
   isAccessGranted?: boolean;
   requestAccess: (opts: { reason: string }, cb: (ok: boolean) => void) => void;
@@ -27,12 +28,14 @@ function webApp() {
 
 function getBio(): TgBio | null {
   try {
+    // Live read each call — BiometricManager may appear after Telegram injects the script.
     return webApp()?.BiometricManager || null;
   } catch {
     return null;
   }
 }
 
+/** Sync peek — often false until `initBiometric()` finishes. Prefer the async probe in UI. */
 export function biometricAvailable(): boolean {
   try {
     const bio = getBio();
@@ -71,24 +74,75 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
 const BIO_INIT_MS = 2_500;
 const BIO_CB_MS = 12_000;
 
-function initBio(): Promise<TgBio | null> {
-  const bio = getBio();
-  if (!bio) return Promise.resolve(null);
-  return withTimeout(
-    new Promise<TgBio>((resolve) => {
-      try {
-        bio.init(() => resolve(bio));
-      } catch {
-        resolve(bio);
-      }
-    }),
-    BIO_INIT_MS,
-    bio,
-  );
+/** Single in-flight / completed init — Telegram sets isBiometricAvailable only after init(). */
+let bioInitPromise: Promise<boolean> | null = null;
+
+/**
+ * @param opts.requestAccess — default false for status probes (needs a tap).
+ *   Unlock / issue pass true so Face ID can request permission.
+ */
+export async function initBiometric(opts?: { requestAccess?: boolean }): Promise<boolean> {
+  try {
+    const bio = getBio();
+    if (!bio) return false;
+
+    if (bio.isInited) {
+      bioInitPromise = bioInitPromise ?? Promise.resolve(true);
+    } else if (!bioInitPromise) {
+      const initP = withTimeout(
+        new Promise<void>((r) => {
+          try {
+            bio.init(() => r());
+          } catch {
+            r();
+          }
+        }),
+        BIO_INIT_MS,
+        undefined,
+      );
+      bioInitPromise = initP.then(() => {
+        if (!bio.isInited) bioInitPromise = null;
+        return true;
+      });
+    }
+    await bioInitPromise;
+
+    if (!bio.isBiometricAvailable) return false;
+    if (opts?.requestAccess && !bio.isAccessGranted) {
+      const ok = await withTimeout(
+        new Promise<boolean>((r) => {
+          try {
+            bio.requestAccess({ reason: t(getLang(), "unlockReasonUnlock") }, (granted) => r(!!granted));
+          } catch {
+            r(false);
+          }
+        }),
+        BIO_CB_MS,
+        false,
+      );
+      if (!ok) return false;
+    }
+    return true;
+  } catch {
+    bioInitPromise = null;
+    return false;
+  }
+}
+
+/** Probe with one retry — Telegram often flips isBiometricAvailable only after a late init(). */
+export async function probeBiometricAvailable(): Promise<boolean> {
+  let ok = await initBiometric({ requestAccess: false });
+  if (!ok && !biometricAvailable()) {
+    await new Promise((r) => setTimeout(r, 400));
+    ok = await initBiometric({ requestAccess: false });
+  }
+  return ok || biometricAvailable();
 }
 
 export async function authenticateBiometric(reason: string): Promise<boolean> {
-  const bio = await initBio();
+  const ready = await initBiometric({ requestAccess: true });
+  if (!ready && !biometricAvailable()) throw new Error("biometric_unavailable");
+  const bio = getBio();
   if (!bio?.isBiometricAvailable) throw new Error("biometric_unavailable");
   if (!bio.isAccessGranted) {
     const granted = await withTimeout(
@@ -183,7 +237,8 @@ export function clearPassport() {
 export async function unlockPassport(reason?: string): Promise<PassportRecord> {
   const rec = loadPassportVault();
   if (!rec) throw new Error("no_vault");
-  if (biometricAvailable()) {
+  // Must init first — sync isBiometricAvailable is false until BiometricManager.init().
+  if (await probeBiometricAvailable()) {
     await authenticateBiometric(reason || t(getLang(), "unlockReasonUnlock"));
   }
   openPassportSession(rec);

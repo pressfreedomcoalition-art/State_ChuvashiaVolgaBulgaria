@@ -12,7 +12,8 @@ import {
   loadPassportVault,
   unlockPassport,
 } from "../lib/passport";
-import { biometricAvailable } from "../lib/passportVault";
+import { probeBiometricAvailable } from "../lib/passportVault";
+import { isTelegram } from "../lib/telegram";
 import {
   bindWalletBackup,
   fetchPassportBackupStatus,
@@ -30,7 +31,30 @@ export function Passport() {
   const [busy, setBusy] = useState(false);
   const [bound, setBound] = useState<string | null>(null);
   const [showNudge, setShowNudge] = useState(false);
+  const [bioOk, setBioOk] = useState(false);
+  const [bioProbed, setBioProbed] = useState(false);
   const unlocked = !!getSession();
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const ok = await probeBiometricAvailable();
+        if (alive) {
+          setBioOk(ok);
+          setBioProbed(true);
+        }
+      } catch {
+        if (alive) {
+          setBioOk(false);
+          setBioProbed(true);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function refreshBindStatus() {
     try {
@@ -54,6 +78,9 @@ export function Passport() {
     try {
       await unlockPassport(tt("unlockReasonUnlock"));
       setMsg(tt("passportUnlocked"));
+      const ok = await probeBiometricAvailable();
+      setBioOk(ok);
+      setBioProbed(true);
       await refreshBindStatus();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -114,7 +141,17 @@ export function Passport() {
     <div className="stack">
       <h1 className="page-title">{tt("passport")}</h1>
       <div className="card">
-        <p>{tt("passportBioHint", { bio: biometricAvailable() ? tt("bioOn") : tt("bioOff") })}</p>
+        <p>
+          {tt("passportBioHint", {
+            bio: !bioProbed
+              ? tt("bioChecking")
+              : bioOk
+                ? tt("bioOn")
+                : !isTelegram()
+                  ? tt("bioOffBrowser")
+                  : tt("bioOff"),
+          })}
+        </p>
         <p className="muted">
           {tt("vaultLine", {
             vault: hasLocalVault() ? tt("vaultYes") : tt("vaultNo"),
