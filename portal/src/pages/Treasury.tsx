@@ -53,9 +53,10 @@ export function Treasury() {
   const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
   const [deployMsg, setDeployMsg] = useState("");
 
-  const tonNano = Number(treasury?.ton ?? treasury?.governance ?? 0);
-  const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : 0;
+  const tonNano = Number(treasury?.ton ?? treasury?.governance ?? NaN);
+  const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : null;
   const jettons = treasury?.jettons || [];
+  const tonLabel = tonHuman == null ? "—" : trimNum(tonHuman);
 
   const convertParam = params.get(FUND_CONVERT_TON_MIN_PARAM);
   const convertOn = isFundConvertEnabled(convertParam);
@@ -193,7 +194,7 @@ export function Treasury() {
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <div>
                 <strong>TON</strong>
-                <div style={{ fontSize: 24 }}>{trimNum(tonHuman)}</div>
+                <div style={{ fontSize: 24 }}>{tonLabel}</div>
               </div>
             </div>
             {jettons.map((j) => (
@@ -224,7 +225,7 @@ export function Treasury() {
                 </Link>
               </div>
             ))}
-            {!loading && !jettons.length && !(tonHuman > 0) ? (
+            {!loading && !jettons.length && !(tonHuman != null && tonHuman > 0) ? (
               <p className="muted">{tt("treasuryEmpty")}</p>
             ) : null}
           </div>
@@ -270,7 +271,7 @@ export function Treasury() {
             <>
               <p>
                 Порог: <strong>{trimNum(convertMinTon)} TON</strong>
-                {tonHuman < convertMinTon ? (
+                {tonHuman != null && tonHuman < convertMinTon ? (
                   <span style={{ color: "var(--maroon)" }}> · сейчас {trimNum(tonHuman)} TON — ниже порога</span>
                 ) : null}
               </p>
