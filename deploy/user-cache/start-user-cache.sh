@@ -11,7 +11,7 @@ pkill -f "${ROOT}/server.mjs" 2>/dev/null || true
 pkill -f "pinggy.io" 2>/dev/null || true
 pkill -f "nokey@localhost.run" 2>/dev/null || true
 sleep 1
-nohup env PORT=8790 node "${ROOT}/server.mjs" >>"${LOGS}/cache.log" 2>&1 &
+nohup bash -c "set -a; . '${ROOT}/.env'; set +a; exec node '${ROOT}/server.mjs'" >>"${LOGS}/cache.log" 2>&1 &
 echo $! >"${ROOT}/cache.pid"
 sleep 2
 : >"${LOGS}/tunnel.log"

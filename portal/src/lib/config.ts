@@ -43,6 +43,8 @@ export function civicBase() {
  * Local: Vite `/cache` proxy → cache-server :8790 (falls back to civic if down).
  */
 export function cacheBase() {
+  const runtime = String(cacheApiRuntime || "").trim().replace(/\/$/, "");
+  if (runtime) return runtime;
   const explicit = String(import.meta.env.VITE_CACHE_API || "").trim().replace(/\/$/, "");
   if (isLocalHost()) {
     if (explicit.startsWith("http")) return explicit;
@@ -50,6 +52,28 @@ export function cacheBase() {
   }
   if (explicit) return explicit;
   return civicBase();
+}
+
+/** Optional runtime override from /cache-api.json (tunnel URL without rebuild). */
+let cacheApiRuntime = "";
+
+export function setCacheApiRuntime(url: string) {
+  cacheApiRuntime = String(url || "").trim().replace(/\/$/, "");
+}
+
+/** Fetch Pages-hosted cache endpoint; no-op if missing. */
+export async function bootCacheApiFromJson() {
+  if (typeof window === "undefined" || isLocalHost()) return;
+  try {
+    const base = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
+    const res = await fetch(`${base}cache-api.json`, { cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { url?: string };
+    const url = String(data?.url || "").trim();
+    if (url.startsWith("https://")) setCacheApiRuntime(url);
+  } catch {
+    /* keep bake-time / civic fallback */
+  }
 }
 
 export const CIVIC_API = civicBase();

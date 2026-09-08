@@ -50,7 +50,7 @@ pkill -f "pinggy.io" 2>/dev/null || true
 pkill -f "nokey@localhost.run" 2>/dev/null || true
 sleep 1
 
-nohup env PORT=8790 node "${ROOT}/server.mjs" >>"${LOGS}/cache.log" 2>&1 &
+nohup bash -c "set -a; . '${ROOT}/.env'; set +a; exec node '${ROOT}/server.mjs'" >>"${LOGS}/cache.log" 2>&1 &
 echo $! >"${ROOT}/cache.pid"
 
 for i in 1 2 3 4 5 6 7 8 9 10 12 14 16 18 20; do

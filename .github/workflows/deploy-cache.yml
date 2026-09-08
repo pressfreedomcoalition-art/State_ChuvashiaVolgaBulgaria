@@ -18,8 +18,9 @@ jobs:
     if: github.event_name == 'schedule' || github.event.inputs.confirm == 'OWN_VPS'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       actions: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -68,18 +69,23 @@ jobs:
           curl -fsS --max-time 30 "${URL}/health"
           echo
 
-      - name: Point Pages at cache URL
+      - name: Publish cache URL for Pages (runtime JSON)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CACHE_URL: ${{ steps.pub.outputs.url }}
         run: |
           set -euo pipefail
-          PREV=$(gh variable get VITE_CACHE_API --repo "${{ github.repository }}" 2>/dev/null || true)
-          gh variable set VITE_CACHE_API --repo "${{ github.repository }}" --body "$CACHE_URL"
-          echo "VITE_CACHE_API=${CACHE_URL} (was: ${PREV:-<empty>})"
-          if [[ "$PREV" != "$CACHE_URL" ]]; then
-            gh workflow run pages.yml --repo "${{ github.repository }}"
-            echo "Triggered GitHub Pages rebuild"
+          mkdir -p portal/public
+          printf '%s\n' "{\"url\":\"${CACHE_URL}\"}" > portal/public/cache-api.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add portal/public/cache-api.json
+          if git diff --staged --quiet; then
+            echo "cache-api.json unchanged"
           else
-            echo "URL unchanged — skip Pages rebuild"
+            git commit -m "chore: refresh cache-api.json tunnel URL"
+            git push
+            echo "Updated portal/public/cache-api.json"
           fi
+          # Best-effort bake-time var (may 403 without admin PAT — runtime JSON is source of truth)
+          gh variable set VITE_CACHE_API --repo "${{ github.repository }}" --body "$CACHE_URL" || true
+          gh workflow run pages.yml --repo "${{ github.repository }}" || true
