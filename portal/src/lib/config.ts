@@ -45,11 +45,9 @@ export function civicBase() {
 export function cacheBase() {
   const runtime = String(cacheApiRuntime || "").trim().replace(/\/$/, "");
   if (runtime) return runtime;
+  // Dev / vite preview / e2e: always local proxy (ignore bake-time tunnel URL).
+  if (isLocalHost()) return "/cache";
   const explicit = String(import.meta.env.VITE_CACHE_API || "").trim().replace(/\/$/, "");
-  if (isLocalHost()) {
-    if (explicit.startsWith("http")) return explicit;
-    return "/cache";
-  }
   if (explicit) return explicit;
   return civicBase();
 }
