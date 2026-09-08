@@ -53,7 +53,7 @@ sleep 1
 nohup env PORT=8790 node "${ROOT}/server.mjs" >>"${LOGS}/cache.log" 2>&1 &
 echo $! >"${ROOT}/cache.pid"
 
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in 1 2 3 4 5 6 7 8 9 10 12 14 16 18 20; do
   if curl -fsS http://127.0.0.1:8790/health >/dev/null; then
     break
   fi
@@ -94,7 +94,7 @@ start_pinggy
 
 URL=""
 for i in $(seq 1 45); do
-  URL=$(grep -Eo 'https://[a-zA-Z0-9._-]+\.(a\.pinggy\.link|pinggy\.link|localhost\.run)(/[a-zA-Z0-9._-]*)?' "${LOGS}/tunnel.log" 2>/dev/null | head -1 || true)
+  URL=$(grep -Eo 'https://[a-zA-Z0-9._/-]+' "${LOGS}/tunnel.log" 2>/dev/null | grep -E 'pinggy|localhost\.run' | head -1 || true)
   if [[ -n "$URL" ]]; then
     break
   fi
