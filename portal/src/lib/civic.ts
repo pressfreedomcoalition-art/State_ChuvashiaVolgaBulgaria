@@ -170,17 +170,14 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     return env.value ?? null;
   } catch (e) {
     if ((e as { code?: string }).code === "miss") return null;
-    // Dev proxy to dead local cache-server → keep working via platform.
-    if (cacheBase() === "/cache") {
-      try {
-        const env = await civicGet<CacheEnvelope<T>>(path);
-        return env.value ?? null;
-      } catch (e2) {
-        if ((e2 as { code?: string }).code === "miss") return null;
-        throw e2;
-      }
+    // Dead tunnel / own cache (Pinggy, local) → platform civic, never poison the cabinet.
+    try {
+      const env = await civicGet<CacheEnvelope<T>>(path);
+      return env.value ?? null;
+    } catch (e2) {
+      if ((e2 as { code?: string }).code === "miss") return null;
+      throw e2;
     }
-    throw e;
   }
 }
 

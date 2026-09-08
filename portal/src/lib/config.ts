@@ -41,8 +41,10 @@ export function civicBase() {
  * Snapshot cache host (`/v1/cache/*`).
  * Prod: `VITE_CACHE_API` → own server; unset → platform civic (unchanged Pages).
  * Local: Vite `/cache` proxy → cache-server :8790 (falls back to civic if down).
+ * Dead tunnel / bake-time URL: `bootCacheApiFromJson` sets skip → civic.
  */
 export function cacheBase() {
+  if (cacheApiSkip) return civicBase();
   const runtime = String(cacheApiRuntime || "").trim().replace(/\/$/, "");
   if (runtime) return runtime;
   // Dev / vite preview / e2e: always local proxy (ignore bake-time tunnel URL).
@@ -54,24 +56,55 @@ export function cacheBase() {
 
 /** Optional runtime override from /cache-api.json (tunnel URL without rebuild). */
 let cacheApiRuntime = "";
+/** When true, ignore runtime + VITE_CACHE_API (dead Pinggy etc.). */
+let cacheApiSkip = false;
 
 export function setCacheApiRuntime(url: string) {
   cacheApiRuntime = String(url || "").trim().replace(/\/$/, "");
+  if (cacheApiRuntime) cacheApiSkip = false;
 }
 
-/** Fetch Pages-hosted cache endpoint; no-op if missing. */
+async function probeCacheHost(url: string): Promise<boolean> {
+  const base = url.replace(/\/$/, "");
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2_500);
+    const res = await fetch(`${base}/health`, {
+      signal: ctrl.signal,
+      credentials: "omit",
+      cache: "no-store",
+    });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch Pages-hosted cache endpoint; activate only if the host answers. */
 export async function bootCacheApiFromJson() {
   if (typeof window === "undefined" || isLocalHost()) return;
+  let fromJson = "";
   try {
     const base = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
     const res = await fetch(`${base}cache-api.json`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) as { url?: string };
-    const url = String(data?.url || "").trim();
-    if (url.startsWith("https://")) setCacheApiRuntime(url);
+    if (res.ok) {
+      const data = (await res.json()) as { url?: string };
+      fromJson = String(data?.url || "").trim();
+    }
   } catch {
     /* keep bake-time / civic fallback */
   }
+  const baked = String(import.meta.env.VITE_CACHE_API || "").trim();
+  const candidate = (fromJson.startsWith("https://") ? fromJson : "") || (baked.startsWith("https://") ? baked : "");
+  if (!candidate) return;
+  if (await probeCacheHost(candidate)) {
+    setCacheApiRuntime(candidate);
+    return;
+  }
+  // Stale Pinggy / offline own cache must not break referendums.
+  cacheApiSkip = true;
+  cacheApiRuntime = "";
 }
 
 export const CIVIC_API = civicBase();

@@ -123,13 +123,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError("");
     try {
+      const force = !!opts?.forceVotings;
+      // Each loader is isolated — a dead cache tunnel must not wipe referendums.
       const [cfg, par, count, votes, treas, deps, hl, tariff] = await Promise.all([
-        cacheGet<DaoConfig>(`daoConfig:${DAO_ADDRESS}`),
-        loadDaoParams(DAO_ADDRESS, { force: !!opts?.forceVotings }),
+        cacheGet<DaoConfig>(`daoConfig:${DAO_ADDRESS}`).catch(() => null),
+        loadDaoParams(DAO_ADDRESS, { force }).catch(() => [] as DaoParam[]),
         civicGet<{ count?: number }>(`/v1/citizenship/count?dao=${DAO_ADDRESS}`).catch(() => null),
-        loadVotings(DAO_ADDRESS, { force: !!opts?.forceVotings }),
-        loadTreasury(DAO_ADDRESS),
-        cacheGet<unknown>(`deputyProfiles:${DAO_ADDRESS}`),
+        loadVotings(DAO_ADDRESS, { force }).catch(() => [] as VotingRow[]),
+        loadTreasury(DAO_ADDRESS).catch(() => null),
+        cacheGet<unknown>(`deputyProfiles:${DAO_ADDRESS}`).catch(() => null),
         civicGet<HealthSnap>("/health").catch(() => null),
         civicGet<KycTariff>("/v1/platform/kyc-tariff").catch(() => null),
       ]);

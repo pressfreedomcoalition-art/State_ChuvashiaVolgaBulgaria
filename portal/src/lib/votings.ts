@@ -90,12 +90,17 @@ async function cacheRefresh(key: string, force = false): Promise<unknown | null>
 }
 
 async function cachePeek(key: string): Promise<unknown | null> {
-  const bases = [cacheBase(), civicBase()].filter((b, i, a) => a.indexOf(b) === i);
+  // Prefer platform civic first when own tunnel is flaky — list often 404 while peek is warm.
+  const bases = [civicBase(), cacheBase()].filter((b, i, a) => a.indexOf(b) === i);
   for (const base of bases) {
     try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8_000);
       const res = await fetch(`${base}/v1/cache/peek?key=${encodeURIComponent(key)}`, {
         credentials: "omit",
+        signal: ctrl.signal,
       });
+      clearTimeout(t);
       if (!res.ok) continue;
       const j = (await res.json()) as { ok?: boolean; value?: unknown };
       if (j?.ok && j.value !== undefined) return j.value;
@@ -107,27 +112,31 @@ async function cachePeek(key: string): Promise<unknown | null> {
 }
 
 /**
- * Votings list: shared cache → peek → server refresh (chain rediscover).
- * Cache miss alone must not paint an empty cabinet.
+ * Votings list: peek (warm civic) → list → server refresh.
+ * `list` is often a 404 miss while `peek` still has the snapshot.
  */
 export async function loadVotings(dao = DAO_ADDRESS, opts?: { force?: boolean }): Promise<VotingRow[]> {
   const key = `votings:${bounceKey(dao)}`;
 
   if (!opts?.force) {
-    const cached = await cacheGet<unknown>(key).catch(() => null);
-    const fromCache = asVotingList(cached);
-    if (fromCache.length) return fromCache;
-
     const peeked = await cachePeek(key);
     const fromPeek = asVotingList(peeked);
     if (fromPeek.length) return fromPeek;
+
+    const cached = await cacheGet<unknown>(key).catch(() => null);
+    const fromCache = asVotingList(cached);
+    if (fromCache.length) return fromCache;
   }
 
   const refreshed = await cacheRefresh(key, !!opts?.force);
   const fromRefresh = asVotingList(refreshed);
   if (fromRefresh.length) return fromRefresh;
 
-  // Last try: fresh GET after refresh may have been written async.
+  // After force refresh miss — still try warm peek (refresh may be HTML/400).
+  const peekedAgain = await cachePeek(key);
+  const fromPeekAgain = asVotingList(peekedAgain);
+  if (fromPeekAgain.length) return fromPeekAgain;
+
   const again = await cacheGet<unknown>(key).catch(() => null);
   return asVotingList(again);
 }
