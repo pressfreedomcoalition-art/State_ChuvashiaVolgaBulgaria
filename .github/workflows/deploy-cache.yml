@@ -37,32 +37,39 @@ jobs:
           HOST="${SSH_HOST:?set secret SSH_HOST}"
           USER_="${SSH_USER:?set secret SSH_USER}"
           PORT="${SSH_PORT:-22}"
-          SSH_BASE=(-p "$PORT" -o StrictHostKeyChecking=accept-new)
-          SSH=(ssh "${SSH_BASE[@]}" -o BatchMode=yes)
+          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 
-          # Prefer login user; if no passwordless/password sudo, fall back to root (key or NEW_PASS).
-          DEPLOY_USER="$USER_"
+          echo "Probing privilege escalation as ${USER_}@${HOST}…"
+          "${SSH[@]}" "${USER_}@${HOST}" "echo ssh_ok"
+
+          # Ensure mish can sudo (passwordless) for the rest of the install.
           if "${SSH[@]}" "${USER_}@${HOST}" "sudo -n true" 2>/dev/null; then
-            echo "Using ${USER_} with passwordless sudo"
-          elif "${SSH[@]}" "${USER_}@${HOST}" "sudo -S -p '' true" <<<"$NEW_PASS" 2>/dev/null; then
-            echo "Using ${USER_} with sudo via NEW_PASS"
-          elif "${SSH[@]}" "root@${HOST}" "true" 2>/dev/null; then
-            echo "Using root via NEW_SSH key"
-            DEPLOY_USER=root
+            echo "OK: passwordless sudo"
           else
-            sudo apt-get update -y && sudo apt-get install -y sshpass
-            export SSHPASS="$NEW_PASS"
-            if sshpass -e ssh "${SSH_BASE[@]}" -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-              "root@${HOST}" "true"; then
-              echo "Using root via NEW_PASS"
-              DEPLOY_USER=root
-              SSH=(sshpass -e ssh "${SSH_BASE[@]}" -o PreferredAuthentications=password -o PubkeyAuthentication=no)
-              SCP=(sshpass -e scp -P "$PORT" -o StrictHostKeyChecking=accept-new -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+            umask 077
+            PASSFILE=$(mktemp)
+            printf '%s\n' "$NEW_PASS" >"$PASSFILE"
+            "${SCP[@]}" "$PASSFILE" "${USER_}@${HOST}:/tmp/chv-sudo.pass"
+            rm -f "$PASSFILE"
+
+            # 1) sudo with NEW_PASS  2) su root with NEW_PASS  3) fail with console instructions
+            if "${SSH[@]}" "${USER_}@${HOST}" "sudo -S -p '' true < /tmp/chv-sudo.pass" 2>/dev/null; then
+              echo "OK: sudo with NEW_PASS — granting NOPASSWD"
+              "${SSH[@]}" "${USER_}@${HOST}" "sudo -S -p '' bash -c 'echo mish ALL=\(ALL\) NOPASSWD:ALL > /etc/sudoers.d/mish-chv && chmod 440 /etc/sudoers.d/mish-chv' < /tmp/chv-sudo.pass && sudo -n true"
+            elif "${SSH[@]}" "${USER_}@${HOST}" "su -c true root < /tmp/chv-sudo.pass" 2>/dev/null; then
+              echo "OK: su root with NEW_PASS — granting mish sudo"
+              "${SSH[@]}" "${USER_}@${HOST}" "su -c 'echo mish ALL=\(ALL\) NOPASSWD:ALL > /etc/sudoers.d/mish-chv && chmod 440 /etc/sudoers.d/mish-chv && visudo -cf /etc/sudoers.d/mish-chv' root < /tmp/chv-sudo.pass && sudo -n true"
             else
-              echo "::error::User ${USER_} has no sudo, and root login (key/password) failed. Add mish to sudoers or enable root SSH."
+              "${SSH[@]}" "${USER_}@${HOST}" "rm -f /tmp/chv-sudo.pass" || true
+              echo "::error::Cannot escalate on VPS. SSH as mish works, but no sudo and root su/password failed."
+              echo "Open DigitalOcean Console as root and run once:"
+              echo "  echo 'mish ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/mish-chv"
+              echo "  chmod 440 /etc/sudoers.d/mish-chv && visudo -cf /etc/sudoers.d/mish-chv"
+              echo "Then re-run this workflow."
               exit 1
             fi
+            "${SSH[@]}" "${USER_}@${HOST}" "rm -f /tmp/chv-sudo.pass" || true
           fi
 
           TMP=$(mktemp -d)
@@ -71,26 +78,18 @@ jobs:
             --exclude=node_modules --exclude=data --exclude=.env \
             -C cache-server .
 
-          umask 077
-          printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
-
           "${SCP[@]}" "$TMP/bundle.tar" \
-            "$TMP/chv-sudo.pass" \
             deploy/chv-cache.service \
             deploy/chv-cache-warm.service \
             deploy/chv-cache-warm.timer \
             deploy/nginx-cache.chv.example.conf \
-            "${DEPLOY_USER}@${HOST}:/tmp/"
+            "${USER_}@${HOST}:/tmp/"
 
-          "${SSH[@]}" "${DEPLOY_USER}@${HOST}" env CACHE_HOST="$CACHE_HOST" DEPLOY_USER="$DEPLOY_USER" /bin/bash <<'REMOTE'
+          "${SSH[@]}" "${USER_}@${HOST}" env CACHE_HOST="$CACHE_HOST" /bin/bash <<'REMOTE'
           set -euo pipefail
-          if [[ "${DEPLOY_USER}" == "root" ]]; then
-            SUDO() { "$@"; }
-          else
-            SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
-          fi
+          SUDO() { sudo -n "$@"; }
           cleanup() {
-            rm -f /tmp/chv-sudo.pass /tmp/bundle.tar \
+            rm -f /tmp/bundle.tar \
               /tmp/chv-cache.service /tmp/chv-cache-warm.service \
               /tmp/chv-cache-warm.timer /tmp/nginx-cache.chv.example.conf
           }
@@ -139,13 +138,6 @@ jobs:
           SUDO systemctl enable --now chv-cache.service
           SUDO systemctl enable --now chv-cache-warm.timer
           SUDO systemctl restart chv-cache.service
-
-          # If we used root, grant mish passwordless sudo for later deploys
-          if [[ "${DEPLOY_USER}" == "root" ]] && id mish >/dev/null 2>&1; then
-            echo 'mish ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/mish-chv
-            chmod 440 /etc/sudoers.d/mish-chv
-            visudo -cf /etc/sudoers.d/mish-chv
-          fi
 
           for i in 1 2 3 4 5 6 7 8; do
             if curl -fsS http://127.0.0.1:8790/health; then
