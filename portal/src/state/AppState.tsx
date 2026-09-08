@@ -24,6 +24,7 @@ import {
   type VotingState,
 } from "../lib/civic";
 import { loadTreasury } from "../lib/treasury";
+import { loadDaoParams } from "../lib/daoParams";
 import { loadVotings } from "../lib/votings";
 import { applyLang, resolveInitialLang, t, type I18nVars, type Lang } from "../lib/i18n";
 import { readCitizenFlag, writeCitizenFlag } from "../lib/authGate";
@@ -124,7 +125,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       const [cfg, par, count, votes, treas, deps, hl, tariff] = await Promise.all([
         cacheGet<DaoConfig>(`daoConfig:${DAO_ADDRESS}`),
-        cacheGet<DaoParam[]>(`params:${DAO_ADDRESS}`),
+        loadDaoParams(DAO_ADDRESS, { force: !!opts?.forceVotings }),
         civicGet<{ count?: number }>(`/v1/citizenship/count?dao=${DAO_ADDRESS}`).catch(() => null),
         loadVotings(DAO_ADDRESS, { force: !!opts?.forceVotings }),
         loadTreasury(DAO_ADDRESS),
@@ -133,7 +134,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         civicGet<KycTariff>("/v1/platform/kyc-tariff").catch(() => null),
       ]);
       setConfig(cfg);
-      setParams(par || []);
+      setParams(par);
       setCitizens(count?.count ?? null);
       setVotings(votes);
       setTreasury(treas);

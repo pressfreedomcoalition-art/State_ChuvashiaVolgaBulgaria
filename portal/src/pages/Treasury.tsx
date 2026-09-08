@@ -20,6 +20,7 @@ import {
   type ConvertStatus,
   type TreasuryTxRow,
 } from "../lib/treasuryOps";
+import { fetchDaoCreator } from "../ton/rpc";
 
 type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr";
 
@@ -52,6 +53,8 @@ export function Treasury() {
   const [txErr, setTxErr] = useState("");
   const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
   const [deployMsg, setDeployMsg] = useState("");
+  /** DexLP guardian = DAO creator (same as dao.blc.cab), not the visitor wallet. */
+  const [guardian, setGuardian] = useState("");
 
   const tonNano = Number(treasury?.ton ?? treasury?.governance ?? NaN);
   const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : null;
@@ -71,26 +74,28 @@ export function Treasury() {
   }, []);
 
   const dexAddr = useMemo(() => {
-    if (!wallet) return "";
+    if (!guardian) return "";
     try {
-      return dexLpAddress(DAO_ADDRESS, wallet);
+      return dexLpAddress(DAO_ADDRESS, guardian);
     } catch {
       return "";
     }
-  }, [wallet]);
+  }, [guardian]);
 
   const chainAllowed = chainAddr ? isModuleAllowed(paramsList, chainAddr) : false;
   const dexAllowed = dexAddr ? isModuleAllowed(paramsList, dexAddr) : false;
 
   const loadExtra = useCallback(async () => {
-    const [st, hist] = await Promise.all([
+    const [st, hist, creator] = await Promise.all([
       fetchConvertStatus(DAO_ADDRESS).catch(() => null),
       sub === "txHistory" ? fetchTreasuryTxHistory(DAO_ADDRESS).catch((e) => {
         setTxErr(e instanceof Error ? e.message : String(e));
         return null;
       }) : Promise.resolve(null),
+      fetchDaoCreator(DAO_ADDRESS).catch(() => null),
     ]);
     setConvertStatus(st);
+    if (creator) setGuardian(creator);
     if (hist) {
       setTxRows(hist);
       setTxErr("");
@@ -131,9 +136,15 @@ export function Treasury() {
       ui.openModal();
       return;
     }
+    const g = guardian || (await fetchDaoCreator(DAO_ADDRESS).catch(() => null));
+    if (!g) {
+      setDeployMsg("Не удалось прочитать creator ДАО (guardian для DexLP).");
+      return;
+    }
+    if (!guardian) setGuardian(g);
     setDeployMsg("Подтвердите деплой DexLP…");
     try {
-      const tx = buildDexLpDeployTx(DAO_ADDRESS, wallet);
+      const tx = buildDexLpDeployTx(DAO_ADDRESS, g);
       await ui.sendTransaction({ validUntil: tx.validUntil, messages: tx.messages });
       setDeployMsg("Отправлено. После подтверждения — приклейте vault голосом.");
     } catch (e) {
@@ -332,7 +343,7 @@ export function Treasury() {
       {sub === "dexlp" && (
         <div className="card stack">
           <p className="muted">LP-vault (DeDust / TONCO): деплой → приклеить → исполнение через голоса.</p>
-          {!wallet ? <p className="muted">Подключите кошелёк (guardian) для адреса vault.</p> : null}
+          {!guardian ? <p className="muted">Читаем creator ДАО (guardian vault)…</p> : null}
           {dexAddr ? (
             <p>
               Vault: <code style={{ wordBreak: "break-all" }}>{shortAddr(dexAddr, 10, 8)}</code>
@@ -340,10 +351,12 @@ export function Treasury() {
               {dexAllowed ? <span style={{ color: "var(--ok)" }}>приклеен</span> : <span>не приклеен</span>}
             </p>
           ) : null}
-          <button type="button" className="btn btn-ghost" onClick={() => void deployDex()}>
-            Деплой DexLP (~0.05 TON)
-          </button>
-          {dexAddr ? (
+          {!dexAllowed ? (
+            <button type="button" className="btn btn-ghost" onClick={() => void deployDex()}>
+              Деплой DexLP (~0.05 TON)
+            </button>
+          ) : null}
+          {dexAddr && !dexAllowed ? (
             <Link
               className="btn btn-primary"
               to={createHref(30, { module: dexAddr, title: "Приклеить DexLP" })}
@@ -353,13 +366,13 @@ export function Treasury() {
           ) : null}
           {dexAddr && dexAllowed ? (
             <Link
-              className="btn btn-ghost"
+              className="btn btn-primary"
               to={createHref(31, { module: dexAddr, exec: "returnTon", title: "Исполнить на DexLP" })}
             >
               Исполнить (vtype 31)
             </Link>
           ) : null}
-          {dexAddr ? (
+          {dexAddr && dexAllowed ? (
             <Link className="btn btn-ghost" to={createHref(30, { module: dexAddr, deny: "1", title: "Отклеить DexLP" })}>
               Отклеить
             </Link>
@@ -378,10 +391,12 @@ export function Treasury() {
               {chainAllowed ? <span style={{ color: "var(--ok)" }}>приклеен</span> : <span>не приклеен</span>}
             </p>
           ) : null}
-          <button type="button" className="btn btn-ghost" onClick={() => void deployChain()}>
-            Деплой ChainWallet (~0.15 TON)
-          </button>
-          {chainAddr ? (
+          {!chainAllowed ? (
+            <button type="button" className="btn btn-ghost" onClick={() => void deployChain()}>
+              Деплой ChainWallet (~0.15 TON)
+            </button>
+          ) : null}
+          {chainAddr && !chainAllowed ? (
             <Link
               className="btn btn-primary"
               to={createHref(30, { module: chainAddr, title: "Приклеить ChainWallet" })}

@@ -1,4 +1,6 @@
-import { Cell } from "@ton/core";
+import { Address, Cell, Dictionary } from "@ton/core";
+import { Buffer } from "buffer";
+import type { DaoParam } from "../lib/civic";
 
 const ORBS =
   "https://ton.access.orbs.network/44A1c0ffF586CF870223CcB146Db39F1090fBAaE/1/mainnet/toncenter-api-v2/runGetMethod";
@@ -15,6 +17,39 @@ async function tcRun(address: string, method: string, stack: unknown[] = []) {
     ok?: boolean;
     result?: { exit_code?: number; stack?: StackAny };
   };
+}
+
+function parseDaoParamSlice(s: ReturnType<Cell["beginParse"]>): DaoParam {
+  const key = s.loadStringRefTail();
+  const isString = s.loadBit();
+  const num = s.loadIntBig(257);
+  const str = s.loadStringRefTail();
+  if (isString) return { key, isString, str };
+  return {
+    key,
+    isString,
+    num: Number(num),
+    numRaw: num.toString(),
+    ...(str ? { str } : {}),
+  };
+}
+
+function paramsFromBoc(boc: string): DaoParam[] {
+  const cell =
+    /^[0-9a-fA-F]+$/.test(boc) && boc.length % 2 === 0
+      ? Cell.fromBoc(Buffer.from(boc, "hex"))[0]
+      : Cell.fromBase64(boc);
+  const dict = Dictionary.loadDirect(
+    Dictionary.Keys.BigInt(257),
+    {
+      serialize: () => {
+        throw new Error("read-only");
+      },
+      parse: (src) => parseDaoParamSlice(src.loadRef().beginParse()),
+    },
+    cell,
+  );
+  return [...dict.values()];
 }
 
 function stackNum(data: Awaited<ReturnType<typeof tcRun>>): number | null {
@@ -77,4 +112,69 @@ export async function fetchVoteJettonWallet(container: string): Promise<string |
   } catch {
     return null;
   }
+}
+
+/** On-chain DAO creator (`get_creator`) — DexLP guardian. */
+export async function fetchDaoCreator(container: string): Promise<string | null> {
+  for (let i = 0; i < 3; i++) {
+    const a = stackAddr(await tcRun(container, "get_creator"));
+    if (a) return a;
+    try {
+      const res = await fetch(
+        `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(container)}/methods/get_creator`,
+        { credentials: "omit" },
+      );
+      if (res.ok) {
+        const j = (await res.json()) as {
+          success?: boolean;
+          stack?: Array<{ type?: string; cell?: string }>;
+        };
+        const boc = j.stack?.[0]?.cell;
+        if (j.success && boc) {
+          const cell =
+            /^[0-9a-fA-F]+$/.test(boc) && boc.length % 2 === 0
+              ? Cell.fromBoc(Buffer.from(boc, "hex"))[0]
+              : Cell.fromBase64(boc);
+          const addr = cell.beginParse().loadAddress();
+          if (addr) return Address.parse(addr.toString()).toString({ bounceable: true, urlSafe: true });
+        }
+      }
+    } catch {
+      /* next */
+    }
+    if (i < 2) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+  }
+  return null;
+}
+
+/**
+ * Full params dict from chain (`get_params`).
+ * Civic `params:` snapshots can be truncated — never treat a 1-row list as complete.
+ */
+export async function fetchDaoParamsOnChain(container: string): Promise<DaoParam[]> {
+  const fromOrbs = await tcRun(container, "get_params");
+  if (fromOrbs.ok && fromOrbs.result?.exit_code === 0) {
+    const top = fromOrbs.result.stack?.[0];
+    const boc =
+      (top?.[1] as { bytes?: string })?.bytes ?? (typeof top?.[1] === "string" ? top[1] : null);
+    if (boc) {
+      try {
+        return paramsFromBoc(boc);
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  const res = await fetch(
+    `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(container)}/methods/get_params`,
+    { credentials: "omit" },
+  );
+  if (!res.ok) throw new Error(`get_params ${res.status}`);
+  const j = (await res.json()) as {
+    success?: boolean;
+    stack?: Array<{ type?: string; cell?: string }>;
+  };
+  const boc = j.stack?.[0]?.cell;
+  if (!j.success || !boc) return [];
+  return paramsFromBoc(boc);
 }
