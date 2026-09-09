@@ -8,7 +8,6 @@ import {
   claimCitizenshipWallet,
   fetchCitizenshipStatus,
   payDocsKycFee,
-  type DocsClaims,
 } from "../lib/civicActions";
 import { formatJettonAmount, pathEnabled } from "../lib/civic";
 import { hasLocalVault, getSession, unlockPassport, unlockPassportSilent, issuePassport } from "../lib/passport";
@@ -27,14 +26,7 @@ export function Citizenship() {
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
   const [msg, setMsg] = useState("");
-  const [claims, setClaims] = useState<DocsClaims>({
-    surname: "",
-    givenName: "",
-    nationality: "RU",
-    birthPlace: "",
-    documentType: "passport",
-    documentNumber: "",
-  });
+  const [kycOpen, setKycOpen] = useState(false);
 
   const active = (q.get("path") || "") as PathId | "";
   /** Citizens may open docs path from «Требуют верификацию»; otherwise go to votings. */
@@ -224,13 +216,14 @@ export function Citizenship() {
     setMsg("");
     try {
       await ensurePassport();
-      let j = await claimCitizenshipDocs({ claims });
+      // No PII in the cabinet — Sumsub collects document data; verifier uses OCR hashes.
+      let j = await claimCitizenshipDocs();
       if (!j.ok && j.code === "need_kyc_fee" && j.fee && wallet) {
         setMsg(tt("payingKyc"));
         const commit = String(j.commit || "");
         await payDocsKycFee({ tonConnectUI, wallet, fee: j.fee, commit });
         for (let i = 0; i < 5; i++) {
-          j = await claimCitizenshipDocs({ claims, feeTxHash: commit });
+          j = await claimCitizenshipDocs({ feeTxHash: commit });
           if (j.ok || j.code !== "fee_tx_not_found") break;
           setMsg(tt("waitingPayIndex"));
           await new Promise((r) => setTimeout(r, 5000));
@@ -250,18 +243,21 @@ export function Citizenship() {
         return;
       }
       setMsg(tt("openingSumsub"));
+      setKycOpen(true);
       const { launchSumsubSdk } = await import("../lib/sumsubUi");
       await launchSumsubSdk({
         accessToken: token,
         onTokenExpired: async () => {
-          const jj = await claimCitizenshipDocs({ claims });
+          const jj = await claimCitizenshipDocs();
           if (!jj.ok || !jj.kyc?.accessToken) throw new Error(jj.error || "token refresh failed");
           return jj.kyc.accessToken;
         },
       });
+      setKycOpen(false);
       setMsg(tt("kycSubmitted"));
       await refreshStatus();
     } catch (e) {
+      setKycOpen(false);
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -400,50 +396,22 @@ export function Citizenship() {
               {tt("connectWallet")}
             </button>
           ) : null}
-          {(
-            [
-              ["surname", "fieldSurname"],
-              ["givenName", "fieldGivenName"],
-              ["patronymic", "fieldPatronymic"],
-              ["nationality", "fieldNationality"],
-              ["birthPlace", "fieldBirthPlace"],
-              ["regPlace", "fieldRegPlace"],
-              ["documentNumber", "fieldDocNumber"],
-            ] as const
-          ).map(([key, labelKey]) => (
-            <label key={key} className="muted" style={{ display: "block" }}>
-              {tt(labelKey)}
-              <input
-                value={(claims as Record<string, string>)[key] || ""}
-                onChange={(e) => setClaims((c) => ({ ...c, [key]: e.target.value }))}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 4,
-                  padding: 8,
-                  borderRadius: 8,
-                  border: "1px solid var(--line)",
-                  boxSizing: "border-box",
-                }}
-              />
-            </label>
-          ))}
+          <p className="muted">{tt("pathDocsExplain")}</p>
           <button
             className="btn btn-primary"
             data-testid="cit-docs-submit"
-            disabled={
-              busy ||
-              !claims.surname.trim() ||
-              !claims.givenName.trim() ||
-              !claims.birthPlace.trim() ||
-              !claims.documentNumber.trim()
-            }
+            disabled={busy || kycOpen}
             onClick={() => void doDocs()}
           >
             {tt("submitSumsub")}
           </button>
-          <div id="sumsub-websdk-container" />
-          <p className="muted">{tt("pathDocsExplain")}</p>
+          <div
+            id="sumsub-websdk-container"
+            style={{
+              display: kycOpen ? "block" : "none",
+              minHeight: kycOpen ? 420 : 0,
+            }}
+          />
         </div>
       ) : null}
 

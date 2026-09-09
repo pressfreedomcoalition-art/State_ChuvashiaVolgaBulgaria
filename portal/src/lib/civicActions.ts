@@ -224,24 +224,25 @@ export async function claimCitizenshipWallet(wallet: string) {
 }
 
 export type DocsClaims = {
-  surname: string;
-  givenName: string;
+  surname?: string;
+  givenName?: string;
   patronymic?: string;
-  nationality: string;
-  birthPlace: string;
+  nationality?: string;
+  birthPlace?: string;
   regPlace?: string;
   formerCitizenship?: string;
-  documentType: string;
-  documentNumber: string;
+  documentType?: string;
+  documentNumber?: string;
 };
 
-export async function claimCitizenshipDocs(opts: {
-  claims: DocsClaims;
+export async function claimCitizenshipDocs(opts?: {
+  claims?: DocsClaims;
   feeTxHash?: string;
 }) {
   const mods = await resolveDaoModules();
   if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
   const presentation = await ensurePassportPresentation(reason("unlockReasonDocsPath"));
+  const claims = opts?.claims;
   const res = await fetch(`${civicBase()}/v1/citizenship/claim-docs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -249,8 +250,11 @@ export async function claimCitizenshipDocs(opts: {
       presentation,
       dao: DAO_ADDRESS,
       citizenshipHub: mods.citizenshipHub,
-      claims: opts.claims,
-      ...(opts.feeTxHash ? { feeTxHash: opts.feeTxHash } : {}),
+      // Omit empty claims — Sumsub OCR supplies identity (commitmentMode=ocr).
+      ...(claims && Object.values(claims).some((v) => String(v || "").trim())
+        ? { claims }
+        : {}),
+      ...(opts?.feeTxHash ? { feeTxHash: opts.feeTxHash } : {}),
     }),
   });
   const j = (await res.json()) as {
