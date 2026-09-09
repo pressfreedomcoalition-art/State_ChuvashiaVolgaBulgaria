@@ -55,10 +55,8 @@ test.describe("citizenship flows (testnet mocks)", () => {
   test("claim citizenship via docs path", async ({ page }) => {
     await page.goto("/citizenship");
     await page.getByTestId("cit-path-docs").click({ timeout: 20_000 });
-    await page.getByLabel(/Фамилия|Surname|Хушамат/i).fill("Иванов");
-    await page.getByLabel(/Имя|Given name|^Ят$/i).fill("Иван");
-    await page.getByLabel(/Место рождения|Place of birth|Çуралнă/i).fill("Чебоксары");
-    await page.getByLabel(/Номер документа|Document number|Документ номер/i).fill("1234567890");
+    // No PII form — Sumsub collects identity; mock claim-docs grants citizen immediately.
+    await expect(page.getByTestId("cit-docs-submit")).toBeVisible();
     await page.getByTestId("cit-docs-submit").click();
     await expect(page).toHaveURL(/referendums/, { timeout: 20_000 });
   });
