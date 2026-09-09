@@ -36,6 +36,7 @@ import {
 } from "../ton/rpc";
 import { createDurationSec, voteSettingsFloorsFromConfig, type VoteSettingsFloors } from "../ton/voteFloors";
 import type { DaoConfig } from "../lib/civic";
+import { E2E_MOCK_VOTING, isE2eTestnet } from "../lib/e2eHooks";
 
 type TonUi = ReturnType<typeof useTonConnectUI>[0];
 
@@ -366,6 +367,26 @@ export async function submitCreateVoting(opts: {
   const title = opts.form.title.trim();
   if (title.length < 3) throw new Error("Заголовок слишком короткий");
 
+  if (isE2eTestnet()) {
+    const decisionOpts =
+      opts.vtype === 0
+        ? opts.form.decisionOpts.map((s) => s.trim()).filter(Boolean).slice(0, 8)
+        : [APPROVE_OPTION.title, REJECT_OPTION.title];
+    const votingAddr = E2E_MOCK_VOTING;
+    try {
+      sessionStorage.setItem(
+        `chv_pending_launch:${votingAddr}`,
+        JSON.stringify({
+          opts: decisionOpts.length >= 2 ? decisionOpts : ["За", "Против"],
+          executable: opts.vtype !== 0,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+    return votingAddr;
+  }
+
   const [versionRaw, seqno, modules, civicRpc, treasuryWallet] = await Promise.all([
     fetchDaoVersion(DAO_ADDRESS),
     fetchDaoVotingSeqno(DAO_ADDRESS),
@@ -445,6 +466,14 @@ export async function launchVoting(opts: {
   optionTitles: string[];
   executable?: boolean;
 }) {
+  if (isE2eTestnet()) {
+    try {
+      sessionStorage.removeItem(`chv_pending_launch:${opts.voting}`);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
   const messages: Array<{ address: string; amount: string; payload?: string }> = [];
   for (const title of opts.optionTitles) {
     const desc =
@@ -477,6 +506,7 @@ export async function launchVoting(opts: {
 }
 
 export async function finalizeVoting(opts: { ui: TonUi; voting: string }) {
+  if (isE2eTestnet()) return;
   await opts.ui.sendTransaction(
     buildDirectTx(opts.voting, buildTextComment("finalize"), FINALIZE_TON),
   );

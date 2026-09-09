@@ -318,6 +318,7 @@ export function Citizenship() {
               key={p.id}
               type="button"
               className="btn btn-primary btn-wide"
+              data-testid={`cit-path-${p.id}`}
               onClick={() => openPath(p.id)}
               style={{ textAlign: "left" }}
             >
@@ -363,7 +364,7 @@ export function Citizenship() {
               {tt("connectWallet")}
             </button>
           ) : null}
-          <button className="btn btn-primary" disabled={busy || !wallet} onClick={() => void doPay()}>
+          <button className="btn btn-primary" disabled={busy || !wallet} data-testid="cit-pay-submit" onClick={() => void doPay()}>
             {tt("payInCabinet")}
           </button>
           <button className="btn btn-ghost" onClick={openBulCoinDeposit}>
@@ -385,7 +386,7 @@ export function Citizenship() {
               {tt("connectWallet")}
             </button>
           ) : null}
-          <button className="btn btn-primary" disabled={busy || !wallet} onClick={() => void doWallet()}>
+          <button className="btn btn-primary" disabled={busy || !wallet} data-testid="cit-wallet-submit" onClick={() => void doWallet()}>
             {tt("claimWalletNft")}
           </button>
           <p className="muted">{tt("pathWalletExplain")}</p>
@@ -429,6 +430,7 @@ export function Citizenship() {
           ))}
           <button
             className="btn btn-primary"
+            data-testid="cit-docs-submit"
             disabled={
               busy ||
               !claims.surname.trim() ||

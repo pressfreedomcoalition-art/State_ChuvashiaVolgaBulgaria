@@ -5,13 +5,14 @@ import { useApp } from "../state/AppState";
 import { votingStatus, type VotingState } from "../lib/civic";
 import { castCivicVote } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
+import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
 import { hasLocalVault } from "../lib/passport";
 
 export function ReferendumDetail() {
   const { address = "" } = useParams();
   const [params] = useSearchParams();
   const { tt, loadVoting, votings, refresh } = useApp();
-  const wallet = useTonAddress();
+  const wallet = resolveWallet(useTonAddress());
   const [ui] = useTonConnectUI();
   const [state, setState] = useState<VotingState | null>(null);
   const [done, setDone] = useState(false);
@@ -30,7 +31,7 @@ export function ReferendumDetail() {
     void (async () => {
       setBusy(true);
       setInfo("Ждём деплой опроса…");
-      await new Promise((r) => setTimeout(r, 12_000));
+      await new Promise((r) => setTimeout(r, isE2eTestnet() ? 50 : 12_000));
       if (cancelled) return;
       setInfo("Добавляем опции и запускаем…");
       try {
@@ -163,7 +164,7 @@ export function ReferendumDetail() {
         <div className="card">
           <h3>Запуск</h3>
           <p className="muted">Добавить опции и отправить «start» на контракт опроса.</p>
-          <button className="btn btn-primary" disabled={busy} onClick={() => void doLaunch()}>
+          <button className="btn btn-primary" disabled={busy} data-testid="voting-launch" onClick={() => void doLaunch()}>
             Запустить референдум
           </button>
         </div>
@@ -202,6 +203,7 @@ export function ReferendumDetail() {
                 <button
                   key={o.address || o.title}
                   className="btn btn-primary"
+                  data-testid="vote-option"
                   disabled={busy}
                   onClick={() => void vote(o.address, o.title || o.text)}
                 >
@@ -219,7 +221,7 @@ export function ReferendumDetail() {
               </button>
             </div>
           )}
-          <button className="btn btn-ghost" disabled={busy} onClick={() => void doFinalize()} style={{ marginTop: 12 }}>
+          <button className="btn btn-ghost" disabled={busy} data-testid="voting-finalize" onClick={() => void doFinalize()} style={{ marginTop: 12 }}>
             Подвести итог
           </button>
         </div>

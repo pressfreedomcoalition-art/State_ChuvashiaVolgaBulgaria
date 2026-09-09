@@ -4,6 +4,7 @@ import { cacheGet } from "./civic";
 import { ensurePresentation, issuePassport } from "./passport";
 import { parseContainerSides, resolveJettonWallet } from "./tonResolve";
 import { t, getLang } from "./i18n";
+import { isE2eTestnet } from "./e2eHooks";
 
 function reason(key: string) {
   return t(getLang(), key);
@@ -110,43 +111,47 @@ export async function claimCitizenshipPay(opts: {
   const commitHex = st.commit;
   if (!commitHex) throw new Error("no_commit");
 
-  const commit = BigInt(`0x${commitHex}`);
-  const forward = beginCell()
-    .storeUint(OP_CLAIM_PAY, 32)
-    .storeUint(0, 64)
-    .storeUint(commit, 256)
-    .endCell();
-  const userWallet = await resolveJettonWallet(opts.payMaster, opts.wallet);
-  const body = beginCell()
-    .storeUint(0x0f8a7ea5, 32)
-    .storeUint(0, 64)
-    .storeCoins(opts.amountNano)
-    .storeAddress(Address.parse(mods.pathPay))
-    .storeAddress(Address.parse(opts.wallet))
-    .storeBit(false)
-    .storeCoins(toNano("0.05"))
-    .storeBit(true)
-    .storeRef(forward)
-    .endCell();
+  let txHash: string | undefined = isE2eTestnet() ? "e2e-testnet-skip-tx" : undefined;
+  if (!isE2eTestnet()) {
+    const commit = BigInt(`0x${commitHex}`);
+    const forward = beginCell()
+      .storeUint(OP_CLAIM_PAY, 32)
+      .storeUint(0, 64)
+      .storeUint(commit, 256)
+      .endCell();
+    const userWallet = await resolveJettonWallet(opts.payMaster, opts.wallet);
+    const body = beginCell()
+      .storeUint(0x0f8a7ea5, 32)
+      .storeUint(0, 64)
+      .storeCoins(opts.amountNano)
+      .storeAddress(Address.parse(mods.pathPay))
+      .storeAddress(Address.parse(opts.wallet))
+      .storeBit(false)
+      .storeCoins(toNano("0.05"))
+      .storeBit(true)
+      .storeRef(forward)
+      .endCell();
 
-  const boc = await opts.tonConnectUI.sendTransaction({
-    validUntil: Math.floor(Date.now() / 1000) + 360,
-    messages: [
-      {
-        address: userWallet,
-        amount: toNano("0.2").toString(),
-        payload: body.toBoc().toString("base64"),
-      },
-    ],
-  });
+    const boc = await opts.tonConnectUI.sendTransaction({
+      validUntil: Math.floor(Date.now() / 1000) + 360,
+      messages: [
+        {
+          address: userWallet,
+          amount: toNano("0.2").toString(),
+          payload: body.toBoc().toString("base64"),
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 8000));
+    txHash = typeof boc === "string" ? boc : undefined;
+  }
 
-  await new Promise((r) => setTimeout(r, 8000));
   const claimBody = {
     presentation,
     dao: DAO_ADDRESS,
     pathPay: mods.pathPay,
     citizenshipHub: mods.citizenshipHub,
-    txHash: typeof boc === "string" ? boc : undefined,
+    txHash,
   };
 
   let c = await fetch(`${civicBase()}/v1/citizenship/claim-pay`, {
@@ -156,7 +161,7 @@ export async function claimCitizenshipPay(opts: {
   }).then((r) => r.json() as Promise<{ ok?: boolean; code?: string; error?: string; paths?: string[] }>);
 
   for (let i = 0; i < 5 && !c.ok && (c.code === "tx_not_found" || c.code === "payment_not_found"); i++) {
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, isE2eTestnet() ? 10 : 5000));
     c = await fetch(`${civicBase()}/v1/citizenship/claim-pay`, {
       method: "POST",
       headers: { "content-type": "application/json" },

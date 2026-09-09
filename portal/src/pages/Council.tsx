@@ -35,7 +35,12 @@ export function Council() {
 
       <div className="card stack" style={{ marginTop: 8 }}>
         <p className="muted">{tt("candidateHint")}</p>
-        <button className="btn btn-primary btn-wide" type="button" onClick={() => nav("/referendums/new")}>
+        <button
+          className="btn btn-primary btn-wide"
+          type="button"
+          data-testid="become-candidate"
+          onClick={() => nav("/referendums/new")}
+        >
           {tt("becomeCandidate")}
         </button>
       </div>

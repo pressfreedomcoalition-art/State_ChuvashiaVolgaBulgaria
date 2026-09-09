@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useTonAddress } from "@tonconnect/ui-react";
 import { CABINET_LOGO, DAO_ADDRESS } from "../lib/config";
+import { resolveWallet } from "../lib/e2eHooks";
 import {
   cacheGet,
   civicGet,
@@ -69,7 +70,7 @@ function asList<T>(v: unknown): T[] {
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const wallet = useTonAddress();
+  const wallet = resolveWallet(useTonAddress());
   const [lang, setLangState] = useState<Lang>(() => {
     const initial = resolveInitialLang();
     applyLang(initial);

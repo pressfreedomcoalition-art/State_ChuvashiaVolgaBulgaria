@@ -10,6 +10,7 @@ import {
 } from "../lib/createVotingFlow";
 import { voteSettingsFloorsFromConfig } from "../ton/voteFloors";
 import type { ModExecKind } from "../lib/treasuryOps";
+import { resolveWallet } from "../lib/e2eHooks";
 
 type Cat = "decisions" | "citizenship" | "treasury" | "settings" | "hub" | "parties";
 
@@ -77,7 +78,7 @@ function parseVtype(raw: string | null): CreateVtype | null {
 
 export function CreateReferendum() {
   const { config, tt, isCitizen } = useApp();
-  const wallet = useTonAddress();
+  const wallet = resolveWallet(useTonAddress());
   const [ui] = useTonConnectUI();
   const nav = useNavigate();
   const [q] = useSearchParams();
@@ -158,6 +159,7 @@ export function CreateReferendum() {
                 key={it.v}
                 type="button"
                 className="card"
+                data-testid={`create-vtype-${it.v}`}
                 style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--line)" }}
                 onClick={() => {
                   setVtype(it.v);
@@ -504,7 +506,12 @@ export function CreateReferendum() {
             <p className="muted">Исполняемое голосование: опции «За» / «Против» фиксированы контрактом.</p>
           ) : null}
 
-          <button className="btn btn-primary btn-wide" disabled={busy || !form.title.trim()} onClick={() => void onSubmit()}>
+          <button
+            className="btn btn-primary btn-wide"
+            data-testid="create-voting-submit"
+            disabled={busy || !form.title.trim()}
+            onClick={() => void onSubmit()}
+          >
             {wallet ? "Создать в кошельке (~0.1 TON)" : "Подключить кошелёк"}
           </button>
           {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}

@@ -19,8 +19,8 @@ export default defineConfig({
     : {
         command: "npm run preview -- --port " + port,
         url: baseURL,
-        reuseExistingServer: true,
-        timeout: 60_000,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
       },
   projects: [
     {
