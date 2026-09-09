@@ -1,9 +1,8 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useApp } from "../state/AppState";
 
 export function Council() {
   const { tt, deputies } = useApp();
-  const nav = useNavigate();
 
   return (
     <div className="stack">
@@ -35,14 +34,9 @@ export function Council() {
 
       <div className="card stack" style={{ marginTop: 8 }}>
         <p className="muted">{tt("candidateHint")}</p>
-        <button
-          className="btn btn-primary btn-wide"
-          type="button"
-          data-testid="become-candidate"
-          onClick={() => nav("/referendums/new")}
-        >
+        <Link className="btn btn-primary btn-wide" to="/council/nominate" data-testid="become-candidate">
           {tt("becomeCandidate")}
-        </button>
+        </Link>
       </div>
     </div>
   );

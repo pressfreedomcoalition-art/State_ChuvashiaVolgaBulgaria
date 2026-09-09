@@ -111,19 +111,23 @@ test.describe("deputy nomination flow (testnet mocks)", () => {
     await enableE2eSession(page, { citizen: true, wallet: true, vault: true, presentation: true });
   });
 
-  test("council shows deputies and become-candidate opens create", async ({ page }) => {
+  test("council shows deputies and become-candidate opens nominate form", async ({ page }) => {
     await page.goto("/council");
     await expect(page.getByText("Депутат E2E")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("become-candidate").click();
-    await expect(page).toHaveURL(/referendums\/new/);
-    await expect(page.getByRole("heading", { name: /Создать голосование|Create voting/i })).toBeVisible();
+    await expect(page).toHaveURL(/council\/nominate/);
+    await expect(page.getByTestId("nominate-title")).toBeVisible();
+    await expect(page.getByTestId("candidate-name")).toBeVisible();
   });
 
   test("nominate via create decision referendum", async ({ page }) => {
     await page.goto("/council");
     await page.getByTestId("become-candidate").click({ timeout: 20_000 });
-    await page.getByTestId("create-vtype-0").click();
-    await page.getByPlaceholder("Тема референдума").fill("Выдвижение депутата E2E");
+    await page.getByTestId("candidate-name").fill("Кандидат E2E");
+    await page.getByTestId("candidate-bio").fill("Программа E2E");
+    await page.getByTestId("candidate-continue").click();
+    await expect(page).toHaveURL(/referendums\/new/);
+    await expect(page.getByPlaceholder("Тема референдума")).toHaveValue(/Выдвижение|Nomination|Суйлав/i);
     await page.getByTestId("create-voting-submit").click();
     await expect(page).toHaveURL(/launch=1/, { timeout: 15_000 });
     await expect(page.getByText(/Запущено/i)).toBeVisible({ timeout: 15_000 });

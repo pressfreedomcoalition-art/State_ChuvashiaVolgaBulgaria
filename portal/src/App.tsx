@@ -9,6 +9,7 @@ import { CreateReferendum } from "./pages/CreateReferendum";
 import { ReferendumDetail } from "./pages/ReferendumDetail";
 import { Treasury } from "./pages/Treasury";
 import { Council } from "./pages/Council";
+import { Nominate } from "./pages/Nominate";
 import { Settings } from "./pages/Settings";
 import { EligReturn } from "./pages/EligReturn";
 import { Sandbox } from "./pages/Sandbox";
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/referendums/:address" element={<ReferendumDetail />} />
         <Route path="/treasury" element={<Treasury />} />
         <Route path="/council" element={<Council />} />
+        <Route path="/council/nominate" element={<Nominate />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

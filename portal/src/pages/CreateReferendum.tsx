@@ -84,7 +84,9 @@ export function CreateReferendum() {
   const [q] = useSearchParams();
   const floors = useMemo(() => voteSettingsFloorsFromConfig(config), [config]);
   const presetV = parseVtype(q.get("vtype"));
-  const [cat, setCat] = useState<Cat>(() => (presetV && TREASURY_VTYPES.has(presetV) ? "treasury" : "decisions"));
+  const [cat, setCat] = useState<Cat>(() =>
+    presetV != null && TREASURY_VTYPES.has(presetV) ? "treasury" : "decisions",
+  );
   const [vtype, setVtype] = useState<CreateVtype | null>(() => presetV);
   const [form, setForm] = useState<CreateForm>(() => {
     const base = defaultCreateForm(floors);
@@ -95,7 +97,7 @@ export function CreateReferendum() {
   const [info, setInfo] = useState("");
 
   useEffect(() => {
-    if (!presetV) return;
+    if (presetV == null) return;
     setVtype(presetV);
     if (TREASURY_VTYPES.has(presetV)) setCat("treasury");
     setForm((f) => applyQueryPreset({ ...defaultCreateForm(floors), ...f }, q, presetV));
@@ -542,6 +544,8 @@ function applyQueryPreset(
   const exec = q.get("exec") as ModExecKind | null;
 
   if (title) next.title = title;
+  const description = q.get("description") || q.get("desc");
+  if (description) next.description = description;
   if (amount) {
     next.payoutAmount = amount;
     next.modAmount = amount;
