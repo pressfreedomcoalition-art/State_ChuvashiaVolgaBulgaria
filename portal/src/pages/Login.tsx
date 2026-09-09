@@ -272,7 +272,7 @@ export function Login() {
   if (booting) {
     return (
       <div className="auth">
-        <div className="auth-card" style={{ padding: 40, textAlign: "center" }}>
+        <div className="auth-card" style={{ gridTemplateColumns: "1fr", padding: 40, textAlign: "center", width: "min(440px, 100%)" }}>
           <img className="auth-flag" src={CABINET_LOGO} alt="" style={{ width: 64, marginBottom: 16 }} />
           <p className="muted">{tt("checkingCitizenship")}</p>
         </div>

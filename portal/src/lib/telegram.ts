@@ -67,7 +67,9 @@ export function applyTelegramSafeArea() {
   root.style.setProperty("--tg-pad-top", px(top > 0 ? top : topFallback));
   root.style.setProperty("--tg-pad-bottom", px(bottom));
   root.style.setProperty("--tg-pad-left", px(left));
-  root.style.setProperty("--tg-pad-right", px(right > 0 ? right : 72));
+  // Only reserve right when Telegram reports an inset (menu). Don't invent 72px —
+  // Desktop Mini App is narrow and a fake gutter clips the login form.
+  root.style.setProperty("--tg-pad-right", px(right));
 }
 
 export function bootTelegram() {
