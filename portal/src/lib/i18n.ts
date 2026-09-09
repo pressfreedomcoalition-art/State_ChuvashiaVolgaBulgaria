@@ -236,6 +236,12 @@ const ru = {
   noBugs: "Ошибок в localStorage нет.",
   pageTitle: "CHV · Личный кабинет",
   flagAlt: "Флаг Чувашии",
+  walletTxRejected: "Кошелёк отклонил или не отправил транзакцию. Можно повторить или переподключить.",
+  walletTxFailed: "Не удалось отправить через TonConnect. Проверьте сессию кошелька и газ (TON).",
+  walletRetryTx: "Повторить отправку",
+  walletReconnect: "Переподключить кошелёк",
+  walletOpenConnect: "Открыть подключение",
+  dismiss: "Скрыть",
 } as const;
 
 export type I18nKey = keyof typeof ru;
@@ -470,6 +476,12 @@ const cv: Record<I18nKey, string> = {
   noBugs: "localStorage-ра йăнăш çук.",
   pageTitle: "CHV · Хар пÿрт",
   flagAlt: "Чăваш ялавĕ",
+  walletTxRejected: "Кошелёк транзакцие йышăнман. Тепĕр хут е каллех çыхăнтарăр.",
+  walletTxFailed: "TonConnect ярса пултарман. Сессие тата газ (TON) тĕрĕслер.",
+  walletRetryTx: "Каллех яр",
+  walletReconnect: "Кошелёке каллех çыхăнтар",
+  walletOpenConnect: "Çыхăну уç",
+  dismiss: "Пытар",
 };
 
 const en: Record<I18nKey, string> = {
@@ -702,6 +714,12 @@ const en: Record<I18nKey, string> = {
   noBugs: "No errors in localStorage.",
   pageTitle: "CHV · Citizen cabinet",
   flagAlt: "Flag of Chuvashia",
+  walletTxRejected: "The wallet rejected or did not send the transaction. Retry or reconnect.",
+  walletTxFailed: "TonConnect could not send. Check the wallet session and gas (TON).",
+  walletRetryTx: "Retry send",
+  walletReconnect: "Reconnect wallet",
+  walletOpenConnect: "Open connect",
+  dismiss: "Dismiss",
 };
 
 const dict: Record<Lang, Record<I18nKey, string>> = { ru, cv, en };

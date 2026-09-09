@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Address } from "@ton/core";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
@@ -21,6 +21,7 @@ import {
   type TreasuryTxRow,
 } from "../lib/treasuryOps";
 import { fetchDaoCreator } from "../ton/rpc";
+import { ActionError, isTonConnectFail } from "../components/TonConnectRecovery";
 
 type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr";
 
@@ -53,6 +54,7 @@ export function Treasury() {
   const [txErr, setTxErr] = useState("");
   const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
   const [deployMsg, setDeployMsg] = useState("");
+  const deployRetryRef = useRef<null | (() => void)>(null);
   /** DexLP guardian = DAO creator (same as dao.blc.cab), not the visitor wallet. */
   const [guardian, setGuardian] = useState("");
 
@@ -121,11 +123,13 @@ export function Treasury() {
       ui.openModal();
       return;
     }
+    deployRetryRef.current = () => void deployChain();
     setDeployMsg("Подтвердите деплой ChainWallet…");
     try {
       const tx = buildChainWalletDeployTx(DAO_ADDRESS);
       await ui.sendTransaction({ validUntil: tx.validUntil, messages: tx.messages });
       setDeployMsg("Отправлено. После подтверждения — приклейте модуль голосом.");
+      deployRetryRef.current = null;
     } catch (e) {
       setDeployMsg(e instanceof Error ? e.message : String(e));
     }
@@ -142,11 +146,13 @@ export function Treasury() {
       return;
     }
     if (!guardian) setGuardian(g);
+    deployRetryRef.current = () => void deployDex();
     setDeployMsg("Подтвердите деплой DexLP…");
     try {
       const tx = buildDexLpDeployTx(DAO_ADDRESS, g);
       await ui.sendTransaction({ validUntil: tx.validUntil, messages: tx.messages });
       setDeployMsg("Отправлено. После подтверждения — приклейте vault голосом.");
+      deployRetryRef.current = null;
     } catch (e) {
       setDeployMsg(e instanceof Error ? e.message : String(e));
     }
@@ -377,7 +383,18 @@ export function Treasury() {
               Отклеить
             </Link>
           ) : null}
-          {deployMsg ? <p className="muted">{deployMsg}</p> : null}
+          {deployMsg && isTonConnectFail(deployMsg) ? (
+            <ActionError
+              error={deployMsg}
+              onRetry={deployRetryRef.current ? () => deployRetryRef.current?.() : undefined}
+              onDismiss={() => {
+                setDeployMsg("");
+                deployRetryRef.current = null;
+              }}
+            />
+          ) : deployMsg ? (
+            <p className="muted">{deployMsg}</p>
+          ) : null}
         </div>
       )}
 
@@ -414,7 +431,18 @@ export function Treasury() {
           ) : (
             <p className="muted">Сначала приклейте модуль, затем доступна выплата.</p>
           )}
-          {deployMsg ? <p className="muted">{deployMsg}</p> : null}
+          {deployMsg && isTonConnectFail(deployMsg) ? (
+            <ActionError
+              error={deployMsg}
+              onRetry={deployRetryRef.current ? () => deployRetryRef.current?.() : undefined}
+              onDismiss={() => {
+                setDeployMsg("");
+                deployRetryRef.current = null;
+              }}
+            />
+          ) : deployMsg ? (
+            <p className="muted">{deployMsg}</p>
+          ) : null}
         </div>
       )}
 

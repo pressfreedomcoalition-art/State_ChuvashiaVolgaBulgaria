@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
@@ -7,6 +7,7 @@ import { castCivicVote } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
 import { hasLocalVault, unlockPassportSilent } from "../lib/passport";
+import { ActionError } from "../components/TonConnectRecovery";
 
 function optionVotes(o: { votes?: number; weight?: number }) {
   return Number(o.votes || o.weight || 0);
@@ -25,6 +26,12 @@ export function ReferendumDetail() {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
   const pending = readPendingLaunch(address);
+  const retryRef = useRef<null | (() => void)>(null);
+
+  function fail(e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setErr(msg);
+  }
 
   async function reload() {
     const st = await loadVoting(address);
@@ -149,20 +156,21 @@ export function ReferendumDetail() {
   }
 
   async function vote(optionAddress?: string, label?: string) {
+    retryRef.current = () => void vote(optionAddress, label);
     setBusy(true);
     setErr("");
     setInfo("");
     try {
       if (!wallet) throw new Error("Подключите кошелёк");
       if (!hasLocalVault()) throw new Error("Сначала разблокируйте паспорт");
-      // Avoid Face ID hang on re-vote in Mini App — open vault silently when possible.
       unlockPassportSilent();
       const chosen = await resolveOptionAddress(optionAddress, label);
       await castCivicVote({ voting: address, optionAddress: chosen, voter: wallet });
       setDone(true);
+      retryRef.current = null;
       await reload();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -181,6 +189,7 @@ export function ReferendumDetail() {
       setErr("Нужны минимум 2 опции (создайте голосование с вариантами или дождитесь кеша)");
       return;
     }
+    retryRef.current = () => void doLaunch();
     setBusy(true);
     setErr("");
     try {
@@ -191,10 +200,11 @@ export function ReferendumDetail() {
         executable: pending?.executable,
       });
       setInfo("Запущено");
+      retryRef.current = null;
       await refresh();
       await reload();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -205,15 +215,17 @@ export function ReferendumDetail() {
       ui.openModal();
       return;
     }
+    retryRef.current = () => void doFinalize();
     setBusy(true);
     setErr("");
     try {
       await finalizeVoting({ ui, voting: address });
       setInfo("Итог отправлен");
+      retryRef.current = null;
       await refresh();
       await reload();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -293,7 +305,17 @@ export function ReferendumDetail() {
       ) : null}
 
       {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
-      {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+      {err ? (
+        <ActionError
+          error={err}
+          busy={busy}
+          onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
+          onDismiss={() => {
+            setErr("");
+            retryRef.current = null;
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
@@ -11,6 +11,7 @@ import {
 import { voteSettingsFloorsFromConfig } from "../ton/voteFloors";
 import type { ModExecKind } from "../lib/treasuryOps";
 import { resolveWallet } from "../lib/e2eHooks";
+import { ActionError } from "../components/TonConnectRecovery";
 
 type Cat = "decisions" | "citizenship" | "treasury" | "settings" | "hub" | "parties";
 
@@ -95,6 +96,7 @@ export function CreateReferendum() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
+  const retryRef = useRef<null | (() => void)>(null);
 
   useEffect(() => {
     if (presetV == null) return;
@@ -114,12 +116,14 @@ export function CreateReferendum() {
       return;
     }
     if (vtype == null) return;
+    retryRef.current = () => void onSubmit();
     setBusy(true);
     setErr("");
     setInfo("Подтвердите создание в кошельке…");
     try {
       const addr = await submitCreateVoting({ ui, wallet, vtype, form, config });
       setInfo("Создано — переходим к запуску опций…");
+      retryRef.current = null;
       nav(`/referendums/${encodeURIComponent(addr)}?launch=1`, { replace: true });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -517,7 +521,17 @@ export function CreateReferendum() {
             {wallet ? "Создать в кошельке (~0.1 TON)" : "Подключить кошелёк"}
           </button>
           {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
-          {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+          {err ? (
+            <ActionError
+              error={err}
+              busy={busy}
+              onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
+              onDismiss={() => {
+                setErr("");
+                retryRef.current = null;
+              }}
+            />
+          ) : null}
         </div>
       )}
     </div>

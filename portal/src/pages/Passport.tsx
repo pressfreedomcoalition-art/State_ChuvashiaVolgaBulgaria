@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { fetchGasStatus } from "../lib/civicActions";
@@ -19,6 +19,7 @@ import {
   fetchPassportBackupStatus,
   unbindWalletBackup,
 } from "../lib/passportWalletBackup";
+import { ActionError } from "../components/TonConnectRecovery";
 
 const NUDGE_KEY = "chv_wallet_bind_nudge_v1";
 
@@ -34,7 +35,7 @@ export function Passport() {
   const [bioOk, setBioOk] = useState(false);
   const [bioProbed, setBioProbed] = useState(false);
   const unlocked = !!getSession();
-
+  const retryRef = useRef<null | (() => void)>(null);
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -98,6 +99,7 @@ export function Passport() {
   }
 
   async function doBind() {
+    retryRef.current = () => void doBind();
     setBusy(true);
     setErr("");
     try {
@@ -114,6 +116,7 @@ export function Passport() {
       setShowNudge(false);
       setBound(out.wallet);
       setMsg(tt("walletBoundOk"));
+      retryRef.current = null;
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -199,7 +202,17 @@ export function Passport() {
         </div>
         {gas ? <p>{tt("prepaidGas", { gas })}</p> : null}
         {msg ? <p style={{ color: "var(--ok)" }}>{msg}</p> : null}
-        {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+        {err ? (
+          <ActionError
+            error={err}
+            busy={busy}
+            onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
+            onDismiss={() => {
+              setErr("");
+              retryRef.current = null;
+            }}
+          />
+        ) : null}
       </div>
 
       {hasLocalVault() ? (

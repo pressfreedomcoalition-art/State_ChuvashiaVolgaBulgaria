@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
@@ -13,6 +13,7 @@ import { formatJettonAmount, pathEnabled } from "../lib/civic";
 import { hasLocalVault, getSession, unlockPassport, unlockPassportSilent, issuePassport } from "../lib/passport";
 import { openBulCoinDeposit } from "../lib/telegram";
 import { daoTokenDedustBuyUrl } from "../lib/dedust";
+import { ActionError } from "../components/TonConnectRecovery";
 
 type PathId = "pay" | "docs" | "lang" | "wallet" | "token";
 
@@ -27,6 +28,7 @@ export function Citizenship() {
   const [checking, setChecking] = useState(true);
   const [msg, setMsg] = useState("");
   const [kycOpen, setKycOpen] = useState(false);
+  const retryRef = useRef<null | (() => void)>(null);
 
   const active = (q.get("path") || "") as PathId | "";
   /** Citizens may open docs path from «Требуют верификацию»; otherwise go to votings. */
@@ -167,6 +169,7 @@ export function Citizenship() {
       setErr(tt("payParamsMissing"));
       return;
     }
+    retryRef.current = () => void doPay();
     setBusy(true);
     setErr("");
     setMsg(tt("sendingPay"));
@@ -176,6 +179,7 @@ export function Citizenship() {
       setCitizen(true);
       setIsCitizen(true);
       setMsg(tt("payCitizenOk"));
+      retryRef.current = null;
       nav("/referendums", { replace: true });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -190,6 +194,7 @@ export function Citizenship() {
       setErr(tt("connectWallet"));
       return;
     }
+    retryRef.current = () => void doWallet();
     setBusy(true);
     setErr("");
     try {
@@ -202,6 +207,7 @@ export function Citizenship() {
       setCitizen(true);
       setIsCitizen(true);
       setMsg(tt("walletCitizenOk"));
+      retryRef.current = null;
       nav("/referendums", { replace: true });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -211,6 +217,7 @@ export function Citizenship() {
   }
 
   async function doDocs() {
+    retryRef.current = () => void doDocs();
     setBusy(true);
     setErr("");
     setMsg("");
@@ -234,12 +241,14 @@ export function Citizenship() {
         setCitizen(true);
         setIsCitizen(true);
         setMsg(tt("docsCitizenOk"));
+        retryRef.current = null;
         nav("/referendums", { replace: true });
         return;
       }
       const token = j.kyc?.accessToken;
       if (!token) {
         setMsg(tt("kycPending"));
+        retryRef.current = null;
         return;
       }
       setMsg(tt("openingSumsub"));
@@ -255,6 +264,7 @@ export function Citizenship() {
       });
       setKycOpen(false);
       setMsg(tt("kycSubmitted"));
+      retryRef.current = null;
       await refreshStatus();
     } catch (e) {
       setKycOpen(false);
@@ -423,7 +433,17 @@ export function Citizenship() {
       ) : null}
 
       {msg ? <p style={{ color: "var(--ok)" }}>{msg}</p> : null}
-      {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+      {err ? (
+        <ActionError
+          error={err}
+          busy={busy}
+          onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
+          onDismiss={() => {
+            setErr("");
+            retryRef.current = null;
+          }}
+        />
+      ) : null}
     </div>
   );
 }

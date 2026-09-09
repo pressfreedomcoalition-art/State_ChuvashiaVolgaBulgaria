@@ -25,6 +25,7 @@ import {
   writeCitizenFlag,
 } from "../lib/authGate";
 import { useApp } from "../state/AppState";
+import { ActionError } from "../components/TonConnectRecovery";
 
 const SESSION_PRESENT = "chv_session_presentation";
 
@@ -358,7 +359,14 @@ export function Login() {
           ) : null}
 
           {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
-          {err ? <p style={{ color: "var(--maroon)" }}>{err}</p> : null}
+          {err ? (
+            <ActionError
+              error={err}
+              busy={busy}
+              onRetry={() => void doConnectAndAuth()}
+              onDismiss={() => setErr("")}
+            />
+          ) : null}
           {!isTelegram() ? <p className="muted">{tt("faceIdBetterInTg")}</p> : null}
         </div>
       </div>
