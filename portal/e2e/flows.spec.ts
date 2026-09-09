@@ -70,8 +70,9 @@ test.describe("voting flows (testnet mocks)", () => {
 
   test("list shows mock voting and opens detail", async ({ page }) => {
     await page.goto("/referendums");
-    await expect(page.getByTestId("voting-card")).toHaveCount(1, { timeout: 20_000 });
-    await page.getByTestId("voting-card").getByRole("link").first().click();
+    await expect(page.getByTestId("voting-card").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("voting-card")).toHaveCount(2);
+    await page.getByTestId("voting-card").filter({ hasText: "E2E референдум" }).getByRole("link").first().click();
     await expect(page).toHaveURL(new RegExp(E2E_VOTING));
     await expect(page.getByTestId("vote-option").first()).toBeVisible();
   });
