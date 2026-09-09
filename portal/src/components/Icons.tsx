@@ -14,7 +14,19 @@ export function Ornament({ className }: { className?: string }) {
   );
 }
 
-export type IconName = "home" | "id" | "vote" | "people" | "chest" | "coin" | "gear" | "out" | "shield" | "wallet";
+export type IconName =
+  | "home"
+  | "id"
+  | "vote"
+  | "people"
+  | "chest"
+  | "coin"
+  | "gear"
+  | "out"
+  | "shield"
+  | "wallet"
+  | "law"
+  | "apps";
 
 /** Stroke icons — readable at 18–24px in bottom nav. */
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -96,6 +108,22 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
           <path d="M3 7h15a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H5a2 2 0 0 1-2-2V7z" />
           <path d="M3 7V5a2 2 0 0 1 2-2h11" />
           <circle cx="17" cy="13.5" r="1" fill="currentColor" stroke="none" />
+        </>
+      ) : null}
+      {name === "law" ? (
+        <>
+          <path d="M12 3v18" />
+          <path d="M5 7h14" />
+          <path d="m7 7 2 8h6l2-8" />
+          <path d="M8 21h8" />
+        </>
+      ) : null}
+      {name === "apps" ? (
+        <>
+          <rect x="4" y="4" width="6" height="6" rx="1" />
+          <rect x="14" y="4" width="6" height="6" rx="1" />
+          <rect x="4" y="14" width="6" height="6" rx="1" />
+          <rect x="14" y="14" width="6" height="6" rx="1" />
         </>
       ) : null}
     </svg>

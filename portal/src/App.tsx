@@ -13,6 +13,9 @@ import { Nominate } from "./pages/Nominate";
 import { Settings } from "./pages/Settings";
 import { EligReturn } from "./pages/EligReturn";
 import { Sandbox } from "./pages/Sandbox";
+import { Apps } from "./pages/Apps";
+import { Laws } from "./pages/Laws";
+import { Leaders } from "./pages/Leaders";
 
 export function App() {
   return (
@@ -30,6 +33,9 @@ export function App() {
         <Route path="/treasury" element={<Treasury />} />
         <Route path="/council" element={<Council />} />
         <Route path="/council/nominate" element={<Nominate />} />
+        <Route path="/laws" element={<Laws />} />
+        <Route path="/leaders" element={<Leaders />} />
+        <Route path="/apps" element={<Apps />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

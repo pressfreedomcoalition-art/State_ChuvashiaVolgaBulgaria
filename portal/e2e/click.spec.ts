@@ -53,7 +53,7 @@ test("cabinet click tour", async ({ page }) => {
   await expect(page.getByTestId("votings-refresh")).toBeVisible();
   // bottom nav icons present (mobile viewport still has bottom nav via CSS at 860)
   await expect(page.locator(".bottom-nav svg").first()).toBeVisible({ timeout: 5_000 }).catch(() => {});
-  await page.getByRole("link", { name: /Совет|Council|Канаш/i }).first().click();
+  await page.getByRole("link", { name: /Принятые законы|Passed laws|законсем/i }).first().click();
   await expect(page.getByRole("heading").first()).toBeVisible();
   await page.getByRole("link", { name: /Казна|Treasury|Хапха/i }).first().click();
   await expect(page.getByRole("heading", { name: /Казна|Treasury|Хапха/i }).first()).toBeVisible();

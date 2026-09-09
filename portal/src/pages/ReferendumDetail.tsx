@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
-import { bounceableAddr, votingStatus, type VotingState } from "../lib/civic";
+import { bounceableAddr, votingAwaitingFinalize, votingStatus, type VotingState } from "../lib/civic";
 import { castCivicVote } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
@@ -83,7 +83,16 @@ export function ReferendumDetail() {
   const st = votingStatus(state || row);
   const options = state?.options || state?.results || row?.options || [];
   const total = options.reduce((s, o) => s + optionVotes(o), 0);
-  const canVote = st === "active" || st === "unknown";
+  const needFinalize = votingAwaitingFinalize(state || row);
+  const canVote = (st === "active" || st === "unknown") && !needFinalize;
+  const showFinalize = needFinalize && st !== "finished";
+
+  function statusLabel() {
+    if (st === "finished") return tt("votingDone");
+    if (st === "pending") return tt("votingPending");
+    if (showFinalize || st === "awaiting_finalize") return tt("votingAwaitFinalize");
+    return tt("votingOpen");
+  }
 
   function ResultsBars() {
     const list = options.length ? options : [{ title: tt("yes"), votes: 0 }, { title: tt("no"), votes: 0 }];
@@ -217,7 +226,7 @@ export function ReferendumDetail() {
       </Link>
       <h1 className="page-title">{title}</h1>
       <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
-        {st === "finished" ? tt("votingDone") : st === "pending" ? tt("votingPending") : tt("votingOpen")}
+        {statusLabel()}
       </span>
       {desc ? (
         <div className="card">
@@ -225,7 +234,7 @@ export function ReferendumDetail() {
         </div>
       ) : null}
 
-      {st === "pending" || pending ? (
+      {st === "pending" || (pending && st !== "awaiting_finalize" && !showFinalize) ? (
         <div className="card">
           <h3>Запуск</h3>
           <p className="muted">Добавить опции и отправить «start» на контракт опроса.</p>
@@ -270,8 +279,15 @@ export function ReferendumDetail() {
               </button>
             </div>
           )}
-          <button className="btn btn-ghost" disabled={busy} data-testid="voting-finalize" onClick={() => void doFinalize()} style={{ marginTop: 12 }}>
-            Подвести итог
+        </div>
+      ) : null}
+
+      {showFinalize ? (
+        <div className="card">
+          <h3>{tt("finalizeTitle")}</h3>
+          <p className="muted">{tt("finalizeHint")}</p>
+          <button className="btn btn-primary" disabled={busy} data-testid="voting-finalize" onClick={() => void doFinalize()}>
+            {tt("finalize")}
           </button>
         </div>
       ) : null}

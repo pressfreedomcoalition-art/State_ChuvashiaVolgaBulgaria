@@ -7,7 +7,7 @@
  * C. Deputy — council list + become candidate → create referendum
  */
 import { expect, test } from "@playwright/test";
-import { enableE2eSession, E2E_VOTING, installTestnetMocks } from "./helpers/testnetMocks";
+import { enableE2eSession, E2E_OPT_NO, E2E_OPT_YES, E2E_VOTING, installTestnetMocks } from "./helpers/testnetMocks";
 
 test.describe("citizenship flows (testnet mocks)", () => {
   test.beforeEach(async ({ page }) => {
@@ -84,9 +84,33 @@ test.describe("voting flows (testnet mocks)", () => {
     await expect(page.getByTestId("vote-bars")).toBeVisible();
   });
 
-  test("finalize voting", async ({ page }) => {
+  test("finalize voting when awaiting finalize", async ({ page }) => {
+    await page.route(/\/(cache|civic)\//, async (route) => {
+      const url = new URL(route.request().url());
+      const key = url.searchParams.get("key") || "";
+      if (key.startsWith("votingState:") || key.startsWith("votingMeta:")) {
+        await route.fulfill({
+          json: {
+            ok: true,
+            at: Date.now(),
+            value: {
+              status: "active",
+              awaitingFinalize: true,
+              title: "E2E референдум",
+              options: [
+                { address: E2E_OPT_YES, title: "За", votes: 2 },
+                { address: E2E_OPT_NO, title: "Против", votes: 1 },
+              ],
+            },
+          },
+        });
+        return;
+      }
+      await route.fallback();
+    });
     await page.goto(`/referendums/${encodeURIComponent(E2E_VOTING)}`);
     await expect(page.getByTestId("voting-finalize")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("vote-option")).toHaveCount(0);
     await page.getByTestId("voting-finalize").click();
     await expect(page.getByText(/Итог отправлен/i)).toBeVisible({ timeout: 10_000 });
   });
@@ -129,5 +153,26 @@ test.describe("deputy nomination flow (testnet mocks)", () => {
     await page.getByTestId("create-voting-submit").click();
     await expect(page).toHaveURL(/launch=1/, { timeout: 15_000 });
     await expect(page.getByText(/Запущено/i)).toBeVisible({ timeout: 15_000 });
+  });
+});
+
+test.describe("public browse (guest)", () => {
+  test.beforeEach(async ({ page }) => {
+    await installTestnetMocks(page);
+    await enableE2eSession(page, { citizen: false, wallet: false, vault: false, presentation: false });
+  });
+
+  test("laws leaders apps without citizen", async ({ page }) => {
+    await page.goto("/laws");
+    await expect(page.getByRole("heading", { name: /Принятые законы|Passed laws|законсем/i })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("law-card")).toBeVisible();
+
+    await page.goto("/leaders");
+    await expect(page.getByTestId("leader-card")).toBeVisible({ timeout: 15_000 });
+
+    await page.goto("/apps");
+    await expect(page.getByTestId("hub-app").first()).toBeVisible({ timeout: 15_000 });
   });
 });

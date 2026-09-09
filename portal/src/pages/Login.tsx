@@ -316,6 +316,20 @@ export function Login() {
               <button className="btn btn-ghost btn-wide" disabled={busy} onClick={goJoin}>
                 {tt("joinDao", { name: name || "DAO" })}
               </button>
+              <p className="muted" style={{ marginTop: 12 }}>
+                {tt("browsePublicHint")}
+              </p>
+              <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => nav("/laws")}>
+                  {tt("laws")}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => nav("/leaders")}>
+                  {tt("leaders")}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => nav("/apps")}>
+                  {tt("apps")}
+                </button>
+              </div>
             </>
           ) : null}
 

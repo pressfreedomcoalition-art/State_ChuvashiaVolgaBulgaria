@@ -27,6 +27,16 @@ const PARAMS = [
   { key: "cit.path.wallet", num: 1 },
   { key: "cit.path.wallet.policy", str: JSON.stringify({ enabled: true, sourceDao: E2E_DAO }), isString: true },
   { key: "short_url", str: "chv-e2e", isString: true },
+  {
+    key: "app.bulcoin-extra",
+    str: JSON.stringify({
+      t: "miniapp",
+      r: "https://t.me/bulcoin_blc",
+      n: "BulCoin E2E",
+      d: "test app",
+    }),
+    isString: true,
+  },
 ];
 
 const VOTINGS = [
@@ -38,6 +48,17 @@ const VOTINGS = [
     status: "active",
     options: [
       { address: E2E_OPT_YES, title: "За", votes: 2 },
+      { address: E2E_OPT_NO, title: "Против", votes: 1 },
+    ],
+  },
+  {
+    address: "EQFinishedVotingE2E0000000000000000000000000001",
+    voting: "EQFinishedVotingE2E0000000000000000000000000001",
+    title: "Закон E2E",
+    description: "passed law mock",
+    status: "finished",
+    options: [
+      { address: E2E_OPT_YES, title: "За", votes: 10 },
       { address: E2E_OPT_NO, title: "Против", votes: 1 },
     ],
   },

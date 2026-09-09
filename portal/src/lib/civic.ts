@@ -229,12 +229,35 @@ export function votingAddress(row: VotingRow) {
 
 export function votingStatus(row: VotingRow | VotingState | null | undefined) {
   if (row && "notStarted" in row && row.notStarted) return "pending";
-  if (row && "awaitingFinalize" in row && row.awaitingFinalize) return "pending";
+  if (row && "awaitingFinalize" in row && row.awaitingFinalize) return "awaiting_finalize";
   const s = String(row?.status || "").toLowerCase();
   if (s.includes("finish") || s === "done" || s === "closed") return "finished";
+  if (s.includes("await") && s.includes("final")) return "awaiting_finalize";
   if (s.includes("active") || s.includes("run") || s === "open") return "active";
   if (s.includes("pending") || s.includes("wait") || s.includes("creat")) return "pending";
   return s || "unknown";
+}
+
+/** Unix sec or ms → ms. */
+export function endsAtMs(row: VotingRow | VotingState | null | undefined): number | null {
+  const raw = Number(
+    (row as VotingState | undefined)?.endsAt ??
+      (row as VotingState | undefined)?.settings?.endTime ??
+      (row as VotingRow | undefined)?.endsAt ??
+      0,
+  );
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  return raw < 1e12 ? raw * 1000 : raw;
+}
+
+export function votingAwaitingFinalize(row: VotingRow | VotingState | null | undefined): boolean {
+  if (!row) return false;
+  if ("awaitingFinalize" in row && row.awaitingFinalize) return true;
+  const st = votingStatus(row);
+  if (st === "awaiting_finalize") return true;
+  if (st === "finished" || st === "pending") return false;
+  const end = endsAtMs(row);
+  return end != null && Date.now() >= end;
 }
 
 /** Normalize platform votingState/meta blobs for UI (За/Против, amount.__bigint). */

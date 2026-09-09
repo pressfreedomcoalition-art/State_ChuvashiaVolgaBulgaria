@@ -82,6 +82,13 @@ export function Settings() {
         </Link>
       </div>
       <div className="card">
+        <h3>{tt("apps")}</h3>
+        <p className="muted">{tt("appsHint")}</p>
+        <Link className="btn btn-primary" to="/apps">
+          {tt("apps")}
+        </Link>
+      </div>
+      <div className="card">
         <h3>{tt("buyBlc")}</h3>
         <button className="btn btn-primary" onClick={openBulCoinDeposit}>
           {tt("buyBlc")}

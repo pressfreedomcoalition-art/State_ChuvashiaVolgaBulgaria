@@ -53,7 +53,13 @@ export function Referendums() {
         return (
           <article key={addr || v.title} className="card" data-testid="voting-card">
             <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
-              {st === "finished" ? tt("votingDone") : st === "pending" ? tt("votingPending") : tt("votingOpen")}
+              {st === "finished"
+                ? tt("votingDone")
+                : st === "pending"
+                  ? tt("votingPending")
+                  : st === "awaiting_finalize"
+                    ? tt("votingAwaitFinalize")
+                    : tt("votingOpen")}
             </span>
             <h3 style={{ margin: "10px 0 8px" }}>{v.title || addr}</h3>
             {v.description ? <p className="muted">{v.description}</p> : null}

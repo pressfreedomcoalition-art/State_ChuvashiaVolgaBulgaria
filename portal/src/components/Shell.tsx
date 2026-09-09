@@ -4,49 +4,57 @@ import { useApp } from "../state/AppState";
 import { Icon, type IconName } from "./Icons";
 import { openBulCoinDeposit } from "../lib/telegram";
 import { DAO_ADDRESS, TG_BOT_URL } from "../lib/config";
-import { pathEnabled, shortAddr } from "../lib/civic";
+import { shortAddr } from "../lib/civic";
 import { writeCitizenFlag } from "../lib/authGate";
 
 type NavItem = { to: string; key: string; icon: IconName };
 
+/** Public browse — available without citizenship / login. */
+const PUBLIC: NavItem[] = [
+  { to: "/laws", key: "laws", icon: "law" },
+  { to: "/leaders", key: "leaders", icon: "people" },
+  { to: "/apps", key: "apps", icon: "apps" },
+];
+
 export function Shell() {
-  const { tt, name, logo, shortUrl, wallet, isCitizen, setIsCitizen, params } = useApp();
+  const { tt, name, logo, shortUrl, wallet, isCitizen, setIsCitizen } = useApp();
   const [ui] = useTonConnectUI();
   const nav = useNavigate();
-  const needsVerify = pathEnabled(params, "docs");
 
   const citizenItems: NavItem[] = [
     { to: "/referendums", key: "referendums", icon: "vote" },
-    { to: "/passport", key: "passport", icon: "id" },
-    ...(needsVerify ? [{ to: "/citizenship?path=docs", key: "needVerify", icon: "shield" as const }] : []),
+    ...PUBLIC,
     { to: "/council", key: "council", icon: "people" },
     { to: "/treasury", key: "treasury", icon: "chest" },
+    { to: "/passport", key: "passport", icon: "id" },
   ];
 
-  const obtainItems: NavItem[] = [
+  const guestItems: NavItem[] = [
+    ...PUBLIC,
     { to: "/citizenship", key: "citizenship", icon: "home" },
-    ...(needsVerify ? [{ to: "/citizenship?path=docs", key: "needVerify", icon: "shield" as const }] : []),
   ];
 
-  const items = isCitizen === true ? citizenItems : obtainItems;
-  const home = isCitizen === true ? "/referendums" : "/citizenship";
+  const items = isCitizen === true ? citizenItems : guestItems;
+  const home = isCitizen === true ? "/referendums" : "/laws";
 
   const bottomCitizen: NavItem[] = [
     { to: "/referendums", key: "referendums", icon: "vote" },
-    ...(needsVerify ? [{ to: "/citizenship?path=docs", key: "needVerify", icon: "shield" as const }] : []),
-    { to: "/council", key: "council", icon: "people" },
+    { to: "/laws", key: "laws", icon: "law" },
+    { to: "/leaders", key: "leaders", icon: "people" },
     { to: "/treasury", key: "treasury", icon: "chest" },
-    { to: "/passport", key: "passport", icon: "id" },
+    { to: "/apps", key: "apps", icon: "apps" },
     { to: "/settings", key: "more", icon: "gear" },
   ];
 
-  const bottomObtain: NavItem[] = [
+  const bottomGuest: NavItem[] = [
+    { to: "/laws", key: "laws", icon: "law" },
+    { to: "/leaders", key: "leaders", icon: "people" },
+    { to: "/apps", key: "apps", icon: "apps" },
     { to: "/citizenship", key: "citizenship", icon: "home" },
-    ...(needsVerify ? [{ to: "/citizenship?path=docs", key: "needVerify", icon: "shield" as const }] : []),
-    { to: "/settings", key: "more", icon: "gear" },
+    { to: "/", key: "login", icon: "wallet" },
   ];
 
-  const bottom = isCitizen === true ? bottomCitizen : bottomObtain;
+  const bottom = isCitizen === true ? bottomCitizen : bottomGuest;
 
   return (
     <div className="shell">
@@ -74,17 +82,23 @@ export function Shell() {
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
             <Icon name="gear" /> {tt("settings")}
           </NavLink>
-          <button
-            type="button"
-            onClick={async () => {
-              await ui.disconnect();
-              writeCitizenFlag(null);
-              setIsCitizen(null);
-              nav("/");
-            }}
-          >
-            <Icon name="out" /> {tt("logout")}
-          </button>
+          {isCitizen === true ? (
+            <button
+              type="button"
+              onClick={async () => {
+                await ui.disconnect();
+                writeCitizenFlag(null);
+                setIsCitizen(null);
+                nav("/");
+              }}
+            >
+              <Icon name="out" /> {tt("logout")}
+            </button>
+          ) : (
+            <NavLink to="/" className={({ isActive }) => (isActive ? "active" : "")}>
+              <Icon name="wallet" /> {tt("login")}
+            </NavLink>
+          )}
         </nav>
         <div className="side-foot">
           <a href={TG_BOT_URL} target="_blank" rel="noreferrer">
@@ -108,7 +122,7 @@ export function Shell() {
         aria-label="bottom"
       >
         {bottom.map((it) => (
-          <NavLink key={it.to} to={it.to} className={({ isActive }) => (isActive ? "active" : "")}>
+          <NavLink key={it.to + it.key} to={it.to} className={({ isActive }) => (isActive ? "active" : "")}>
             <span className="bottom-nav-icon" aria-hidden>
               <Icon name={it.icon} size={22} />
             </span>

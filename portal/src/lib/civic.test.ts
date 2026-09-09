@@ -30,6 +30,7 @@ describe("civic helpers", () => {
   it("maps voting status and address", () => {
     expect(votingStatus({ status: "active" })).toBe("active");
     expect(votingStatus({ status: "finished" })).toBe("finished");
+    expect(votingStatus({ awaitingFinalize: true, status: "active" })).toBe("awaiting_finalize");
     expect(votingAddress({ voting: "EQ1", address: "EQ2" })).toBe("EQ2");
   });
 
