@@ -82,7 +82,8 @@ test.describe("voting flows (testnet mocks)", () => {
     await page.goto(`/referendums/${encodeURIComponent(E2E_VOTING)}`);
     await expect(page.getByTestId("vote-option").first()).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("vote-option").first().click();
-    await expect(page.getByText(/голос учтён|vote is counted|Сас шутланнă/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/голос учтён|vote is counted|Сас шутланнă/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("vote-bars")).toBeVisible();
   });
 
   test("finalize voting", async ({ page }) => {

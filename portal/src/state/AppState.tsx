@@ -8,13 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { useTonAddress } from "@tonconnect/ui-react";
-import { CABINET_LOGO, DAO_ADDRESS } from "../lib/config";
+import { CABINET_LOGO, DAO_ADDRESS, cacheBase, civicBase } from "../lib/config";
 import { resolveWallet } from "../lib/e2eHooks";
 import {
   cacheGet,
   civicGet,
   paramMap,
   pickName,
+  bounceableAddr,
+  normalizeVotingDetail,
   type DaoConfig,
   type DaoParam,
   type DeputyCard,
@@ -156,12 +158,36 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const loadVoting = useCallback(async (addr: string) => {
+    const key = bounceableAddr(decodeURIComponent(addr || ""));
     const [state, meta] = await Promise.all([
-      cacheGet<VotingState>(`votingState:${addr}`),
-      cacheGet<VotingState>(`votingMeta:${addr}`),
+      cacheGet<VotingState>(`votingState:${key}`),
+      cacheGet<VotingState>(`votingMeta:${key}`),
     ]);
-    if (!state && !meta) return null;
-    return { ...meta, ...state };
+    let merged: VotingState | null =
+      state || meta ? ({ ...(meta || {}), ...(state || {}) } as VotingState) : null;
+    if (!merged?.options?.length) {
+      // Own cache miss / stale list without options — force platform refresh.
+      try {
+        const bases = [civicBase(), cacheBase()].filter((b, i, a) => a.indexOf(b) === i);
+        for (const base of bases) {
+          const res = await fetch(`${base}/v1/cache/refresh`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ key: `votingState:${key}`, force: true }),
+            credentials: "omit",
+          });
+          if (!res.ok) continue;
+          const j = (await res.json()) as { ok?: boolean; value?: VotingState };
+          if (j?.ok && j.value) {
+            merged = { ...(merged || {}), ...j.value };
+            break;
+          }
+        }
+      } catch {
+        /* keep merged */
+      }
+    }
+    return normalizeVotingDetail(merged);
   }, []);
 
   const pmap = useMemo(() => paramMap(params), [params]);

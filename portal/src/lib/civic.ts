@@ -1,3 +1,4 @@
+import { Address } from "@ton/core";
 import { cacheBase, civicBase, DAO_ADDRESS, OFFICIAL_UI } from "./config";
 
 export type CacheEnvelope<T> = {
@@ -51,15 +52,20 @@ export type VotingOption = {
   votes?: number;
   weight?: number;
   pct?: number;
+  /** Platform cache often stores weight as amount / amount.__bigint */
+  amount?: number | string | { __bigint?: string };
 };
 
 export type VotingState = {
   status?: string;
   title?: string;
+  /** votingMeta uses `name` */
+  name?: string;
   description?: string;
   options?: VotingOption[];
   results?: VotingOption[];
   endsAt?: number;
+  settings?: { endTime?: number };
 };
 
 export type TreasurySnap = {
@@ -229,6 +235,58 @@ export function votingStatus(row: VotingRow | VotingState | null | undefined) {
   if (s.includes("active") || s.includes("run") || s === "open") return "active";
   if (s.includes("pending") || s.includes("wait") || s.includes("creat")) return "pending";
   return s || "unknown";
+}
+
+/** Normalize platform votingState/meta blobs for UI (За/Против, amount.__bigint). */
+export function normalizeVotingDetail(
+  raw: VotingState | null | undefined,
+): VotingState | null {
+  if (!raw) return null;
+  const opts = (raw.options || raw.results || []).map((o) => {
+    const amountRaw = o.amount;
+    let fromAmount = 0;
+    if (typeof amountRaw === "number") fromAmount = amountRaw;
+    else if (typeof amountRaw === "string") fromAmount = Number(amountRaw) || 0;
+    else if (amountRaw && typeof amountRaw === "object" && amountRaw.__bigint) {
+      try {
+        fromAmount = Number(BigInt(amountRaw.__bigint));
+      } catch {
+        fromAmount = 0;
+      }
+    }
+    // Civic weight is often nano-like; for bars use relative counts. If huge, treat as 1 unit per 1e9.
+    let votes = Number(o.votes ?? o.weight ?? 0);
+    if (!votes && fromAmount) {
+      votes = fromAmount >= 1_000_000_000 ? Math.round(fromAmount / 1_000_000_000) : fromAmount;
+      if (votes === 0 && fromAmount > 0) votes = 1;
+    }
+    return {
+      ...o,
+      title: o.title || o.text || "",
+      votes,
+      weight: o.weight ?? votes,
+    } satisfies VotingOption;
+  });
+  const total = opts.reduce((s, o) => s + Number(o.votes || 0), 0);
+  const options = opts.map((o) => ({
+    ...o,
+    pct: o.pct ?? (total ? Math.round((Number(o.votes || 0) / total) * 100) : 0),
+  }));
+  return {
+    ...raw,
+    title: raw.title || raw.name || "",
+    options,
+    results: options,
+  };
+}
+
+/** Bounceable EQ key for cache lookups. */
+export function bounceableAddr(addr: string): string {
+  try {
+    return Address.parse(addr).toString({ bounceable: true, urlSafe: true });
+  } catch {
+    return addr;
+  }
 }
 
 export function officialDaoUrl(extra = "") {
