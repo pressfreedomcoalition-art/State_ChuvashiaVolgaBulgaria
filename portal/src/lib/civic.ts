@@ -169,13 +169,14 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     const env = await cacheFetch<CacheEnvelope<T>>(path);
     return env.value ?? null;
   } catch (e) {
-    if ((e as { code?: string }).code === "miss") return null;
-    // Dead tunnel / own cache (Pinggy, local) → platform civic, never poison the cabinet.
+    // Own tunnel empty (Pinggy 0 entries) OR dead — both must fall through to platform civic.
+    // Previously `miss` returned null and broke claim-wallet (citizenshipHub missing).
     try {
       const env = await civicGet<CacheEnvelope<T>>(path);
       return env.value ?? null;
     } catch (e2) {
       if ((e2 as { code?: string }).code === "miss") return null;
+      if ((e as { code?: string }).code === "miss") return null;
       throw e2;
     }
   }

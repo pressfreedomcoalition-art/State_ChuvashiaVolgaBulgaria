@@ -140,11 +140,20 @@ export async function issuePassport(): Promise<PassportRecord & { restorePhrase?
     await authenticateBiometric(t(getLang(), "unlockReasonIssue"));
   }
   const keys = await createHolderKeyPair();
-  const r = await fetch(`${verifierBase()}/v1/passport/issue`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ holderPublicJwk: keys.publicJwk, deviceBind: null }),
-  });
+  let r: Response;
+  try {
+    r = await fetch(`${verifierBase()}/v1/passport/issue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ holderPublicJwk: keys.publicJwk, deviceBind: null }),
+    });
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+      throw new Error(t(getLang(), "errCivicNetwork"));
+    }
+    throw e instanceof Error ? e : new Error(raw);
+  }
   const j = (await r.json()) as {
     ok?: boolean;
     credential?: string;

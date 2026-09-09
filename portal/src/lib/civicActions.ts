@@ -21,21 +21,54 @@ type TonTxUi = {
 const OP_CLAIM_PAY = 0x5adc0011;
 
 async function civicPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${civicBase()}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const j = (await res.json()) as T & { ok?: boolean; error?: string; code?: string };
+  let res: Response;
+  try {
+    res = await fetch(`${civicBase()}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+      throw new Error(t(getLang(), "errCivicNetwork"));
+    }
+    throw e instanceof Error ? e : new Error(raw);
+  }
+  const j = (await res.json().catch(() => ({}))) as T & { ok?: boolean; error?: string; code?: string };
   if (!res.ok || (j as { ok?: boolean }).ok === false) {
     throw new Error((j as { code?: string; error?: string }).code || (j as { error?: string }).error || `HTTP ${res.status}`);
   }
   return j;
 }
 
+/** TonConnect often yields UQ… — verifier expects bounceable EQ…. */
+function bounceableAddr(addr: string): string {
+  try {
+    return Address.parse(addr).toString({ bounceable: true, urlSafe: true });
+  } catch {
+    return addr;
+  }
+}
+
 export async function resolveDaoModules(dao = DAO_ADDRESS) {
   const sides = await cacheGet<string[]>(`containerSides:${dao}`);
-  return parseContainerSides(sides);
+  const parsed = parseContainerSides(sides);
+  if (parsed.citizenshipHub) return parsed;
+  // Last resort: platform peek (own cache may be warm for params but empty for sides).
+  try {
+    const peekPath = `/v1/cache/peek?key=${encodeURIComponent(`containerSides:${dao}`)}`;
+    const res = await fetch(`${civicBase()}${peekPath}`, { credentials: "omit" });
+    if (res.ok) {
+      const j = (await res.json()) as { ok?: boolean; value?: string[] };
+      if (j?.ok && Array.isArray(j.value) && j.value.length) {
+        return parseContainerSides(j.value);
+      }
+    }
+  } catch {
+    /* keep empty */
+  }
+  return parsed;
 }
 
 export async function fetchCitizenshipStatus(dao = DAO_ADDRESS) {
@@ -185,7 +218,7 @@ export async function claimCitizenshipWallet(wallet: string) {
   }>("/v1/citizenship/claim-wallet", {
     presentation,
     dao: DAO_ADDRESS,
-    wallet,
+    wallet: bounceableAddr(wallet),
     citizenshipHub: mods.citizenshipHub,
   });
 }
