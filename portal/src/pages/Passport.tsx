@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
-import { fetchGasStatus } from "../lib/civicActions";
+import {
+  fetchGasStatus,
+  retryPendingGasClaim,
+  topUpPrepaidGas,
+} from "../lib/civicActions";
 import {
   clearPassport,
   createPresentation,
@@ -29,6 +33,7 @@ export function Passport() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [gas, setGas] = useState<string>("");
+  const [gasAmount, setGasAmount] = useState("0.2");
   const [busy, setBusy] = useState(false);
   const [bound, setBound] = useState<string | null>(null);
   const [showNudge, setShowNudge] = useState(false);
@@ -74,6 +79,18 @@ export function Passport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!hasLocalVault()) return;
+    void (async () => {
+      const claimed = await retryPendingGasClaim();
+      if (claimed?.ok) {
+        setGas(String(claimed.balanceTon ?? claimed.creditedTon ?? ""));
+        setMsg(tt("gasClaimed"));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function unlock() {
     setErr("");
     try {
@@ -95,6 +112,45 @@ export function Passport() {
       setGas(String(r.balanceTon ?? r.nano ?? "0"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function doGasTopUp() {
+    retryRef.current = () => void doGasTopUp();
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      if (!wallet) {
+        ui.openModal();
+        throw new Error(tt("connectWallet"));
+      }
+      if (!hasLocalVault()) throw new Error(tt("needUnlockPassport"));
+      setMsg(tt("gasSending"));
+      const ton = Number(String(gasAmount).replace(",", "."));
+      const r = await topUpPrepaidGas({
+        tonConnectUI: ui,
+        wallet,
+        amountTon: ton,
+        fundAddressHint: health?.gas?.fundAddress,
+      });
+      setGas(String(r.balanceTon ?? r.creditedTon ?? ""));
+      setMsg(tt("gasTopUpOk", { ton: String(r.creditedTon ?? ton) }));
+      retryRef.current = null;
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      const retry = await retryPendingGasClaim();
+      if (retry?.ok) {
+        setGas(String(retry.balanceTon ?? retry.creditedTon ?? ""));
+        setMsg(tt("gasClaimed"));
+        setErr("");
+        retryRef.current = null;
+      } else {
+        setErr(m);
+        setMsg(tt("gasWaitIndex"));
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -215,6 +271,34 @@ export function Passport() {
           />
         ) : null}
       </div>
+
+      {hasLocalVault() ? (
+        <div className="card stack" style={{ gap: 8 }}>
+          <h3 style={{ marginTop: 0 }}>{tt("gasTopUpTitle")}</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            {tt("gasTopUpHint")}
+          </p>
+          <label className="muted" style={{ display: "block" }}>
+            {tt("gasAmount")}
+            <input
+              className="input"
+              style={{ width: "100%", marginTop: 4 }}
+              value={gasAmount}
+              onChange={(e) => setGasAmount(e.target.value)}
+              inputMode="decimal"
+              disabled={busy}
+            />
+          </label>
+          <button
+            className="btn btn-primary"
+            disabled={busy || !wallet}
+            data-testid="gas-topup"
+            onClick={() => void doGasTopUp()}
+          >
+            {tt("gasTopUpBtn")}
+          </button>
+        </div>
+      ) : null}
 
       {hasLocalVault() ? (
         <div className="card">

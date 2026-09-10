@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { bounceableAddr, endsAtMs, votingAwaitingFinalize, votingStatus, type VotingState } from "../lib/civic";
-import { castCivicVote } from "../lib/civicActions";
+import { castCivicVote, isInsufficientGasError } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
 import { formatDateTime } from "../lib/format";
@@ -340,15 +340,25 @@ export function ReferendumDetail() {
 
       {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
       {err ? (
-        <ActionError
-          error={err}
-          busy={busy}
-          onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
-          onDismiss={() => {
-            setErr("");
-            retryRef.current = null;
-          }}
-        />
+        <div className="stack">
+          {isInsufficientGasError(err) ? (
+            <div className="card stack" style={{ gap: 8 }} data-testid="gas-need-cta">
+              <p style={{ margin: 0 }}>{tt("gasNeedDeposit")}</p>
+              <Link className="btn btn-primary" to="/passport">
+                {tt("gasGoTopUp")}
+              </Link>
+            </div>
+          ) : null}
+          <ActionError
+            error={err}
+            busy={busy}
+            onRetry={retryRef.current ? () => retryRef.current?.() : undefined}
+            onDismiss={() => {
+              setErr("");
+              retryRef.current = null;
+            }}
+          />
+        </div>
       ) : null}
     </div>
   );

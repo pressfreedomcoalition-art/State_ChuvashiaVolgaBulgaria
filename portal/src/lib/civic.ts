@@ -85,10 +85,15 @@ export type TreasurySnap = {
 export type DeputyCard = {
   address?: string;
   name?: string;
+  fullName?: string;
   bio?: string;
   age?: string;
   photo?: string;
+  photoUrl?: string;
   votes?: number | string;
+  /** Hex passport commit (citizenship subject) for vote delegation. */
+  passportCommit?: string;
+  subject?: string;
 };
 
 export type HealthSnap = {

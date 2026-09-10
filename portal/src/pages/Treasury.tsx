@@ -21,8 +21,10 @@ import {
   type TreasuryTxRow,
 } from "../lib/treasuryOps";
 import { isPrivFundEnabled, isTopupActive } from "../lib/votingCatalog";
+import { claimPrivatizationShare } from "../lib/civicActions";
 import { fetchDaoCreator, fetchPrivatizationStatus } from "../ton/rpc";
 import { ActionError, isTonConnectFail } from "../components/TonConnectRecovery";
+import { hasLocalVault } from "../lib/passport";
 
 type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr" | "funds";
 
@@ -63,6 +65,8 @@ export function Treasury() {
     fund: null,
     live: false,
   });
+  const [privMsg, setPrivMsg] = useState("");
+  const [privErr, setPrivErr] = useState("");
 
   const tonNano = Number(treasury?.ton ?? treasury?.governance ?? NaN);
   const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : null;
@@ -165,6 +169,31 @@ export function Treasury() {
       deployRetryRef.current = null;
     } catch (e) {
       setDeployMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function onClaimPriv() {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    if (!privStatus.fund) return;
+    setBusy(true);
+    setPrivMsg("");
+    setPrivErr("");
+    try {
+      await claimPrivatizationShare({
+        tonConnectUI: ui,
+        wallet,
+        fund: privStatus.fund,
+      });
+      setPrivMsg(tt("fundsClaimSent"));
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (/claimed/i.test(m)) setPrivErr(tt("fundsAlreadyClaimed"));
+      else setPrivErr(m);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -321,6 +350,16 @@ export function Treasury() {
                     Разблокировать
                   </Link>
                 ) : null}
+                {privStatus.live && privStatus.fund ? (
+                  <button
+                    className="btn btn-primary"
+                    disabled={busy || !wallet || !hasLocalVault()}
+                    data-testid="priv-claim"
+                    onClick={() => void onClaimPriv()}
+                  >
+                    {tt("fundsClaimShare")}
+                  </button>
+                ) : null}
                 <Link
                   className="btn btn-ghost"
                   to={createHref(11, {
@@ -335,6 +374,9 @@ export function Treasury() {
               </>
             )}
           </div>
+          {privStatus.live ? <p className="muted" style={{ margin: 0 }}>{tt("fundsClaimHint")}</p> : null}
+          {privMsg ? <p style={{ color: "var(--ok)", margin: 0 }}>{privMsg}</p> : null}
+          {privErr ? <p style={{ color: "var(--maroon)", margin: 0 }}>{privErr}</p> : null}
 
           <h3 style={{ margin: "16px 0 0" }}>Автопополнение казны</h3>
           <p className="muted" style={{ margin: 0 }}>
