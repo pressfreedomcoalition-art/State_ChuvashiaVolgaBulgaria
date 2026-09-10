@@ -253,6 +253,7 @@ Content-Type: application/json
 | GET | `/v1/citizenship/count?dao=` | **число** граждан, без списка и личностей |
 | GET | `/v1/platform/kyc-tariff` | тариф docs-KYC |
 | GET | `/v1/platform/voting-catalog` | каталог типов голосования (модули create) для кабинетов |
+| GET | `/v1/platform/treasury-modules?dao=` | каталог модулей казны (DexLP / ChainWallet / custom) + адреса при `dao=` |
 | POST | `/v1/partner/elig/begin` | сессия «разрешить сайту узнать да/нет» |
 | GET | `/v1/partner/elig/session/:id` | мета сессии (без PII) |
 | GET | `/v1/partner/elig/consume?code=` | один раз забрать результат |
@@ -320,6 +321,20 @@ POST /v1/passport/issue
 - `GET /v1/notify/subscribers`
 - `POST/DELETE /v1/kyc/creds`
 - `POST /v1/convert/tick`
+
+---
+
+## 7.1a. Каталог модулей казны
+
+```http
+GET /v1/platform/treasury-modules?dao=EQ…
+```
+
+Ответ: `{ ok, version, dao, guardian, modules: [{ id, label, hint, codeHash, needsGuardian, vtypes, address }] }`.
+
+Используется кабинетом при create **vtype 30/31/32** (приклеить / исполнить / USDT TRC-20). Без `dao` — только список; с `dao` — детерминированные адреса DexLP (guardian = `get_creator`) и ChainWallet.
+
+Новый модуль на платформе → правка `civic-verifier/treasuryModulesCatalog.mjs` (кабинеты подтянут без релиза UI).
 
 ---
 

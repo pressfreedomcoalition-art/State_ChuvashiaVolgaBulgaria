@@ -98,6 +98,7 @@ export type CreateForm = {
   convertMinTon: string;
   /** module (30/31/32) */
   moduleAddr: string;
+  modCatalogId: string;
   modDeny: boolean;
   modExec: ModExecKind;
   modAmount: string;
@@ -140,6 +141,7 @@ export function defaultCreateForm(floors: VoteSettingsFloors): CreateForm {
     paramStr: "",
     convertMinTon: "1",
     moduleAddr: "",
+    modCatalogId: "dexlp",
     modDeny: false,
     modExec: "returnJetton",
     modAmount: "1",

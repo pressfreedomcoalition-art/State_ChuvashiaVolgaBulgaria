@@ -22,6 +22,11 @@ import {
   type VotingCatalogItem,
 } from "../lib/votingCatalog";
 import { fetchPrivatizationStatus } from "../ton/rpc";
+import {
+  loadTreasuryModules,
+  modulesForVtype,
+  type TreasuryModuleEntry,
+} from "../lib/treasuryModules";
 
 export function CreateReferendum() {
   const { config, tt, isCitizen, params, citizens } = useApp();
@@ -33,6 +38,7 @@ export function CreateReferendum() {
 
   const [catalog, setCatalog] = useState<VotingCatalog | null>(null);
   const [catalogSource, setCatalogSource] = useState<"api" | "bundle">("bundle");
+  const [treasuryMods, setTreasuryMods] = useState<TreasuryModuleEntry[]>([]);
   const [privFund, setPrivFund] = useState<{ fund: string | null; live: boolean }>({
     fund: null,
     live: false,
@@ -49,14 +55,19 @@ export function CreateReferendum() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [{ catalog: catRaw, source }, priv] = await Promise.all([
+      const [{ catalog: catRaw, source }, priv, treas] = await Promise.all([
         loadVotingCatalog(),
         fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
+        loadTreasuryModules(DAO_ADDRESS).catch(() => ({
+          catalog: { version: 1, modules: [] as TreasuryModuleEntry[] },
+          source: "bundle" as const,
+        })),
       ]);
       if (cancelled) return;
       setCatalog(catRaw);
       setCatalogSource(source);
       setPrivFund(priv);
+      setTreasuryMods(treas.catalog.modules);
     })();
     return () => {
       cancelled = true;
@@ -83,6 +94,32 @@ export function CreateReferendum() {
   );
 
   const vtype = (picked?.vtype ?? null) as CreateVtype | null;
+
+  const moduleChoices = useMemo(
+    () => (vtype != null ? modulesForVtype(treasuryMods, vtype) : treasuryMods),
+    [treasuryMods, vtype],
+  );
+
+  function applyModulePick(id: string) {
+    const m = treasuryMods.find((x) => x.id === id);
+    setForm((f) => ({
+      ...f,
+      modCatalogId: id,
+      moduleAddr: m?.address || (id === "custom" ? f.moduleAddr : ""),
+    }));
+  }
+
+  useEffect(() => {
+    if (!treasuryMods.length) return;
+    if (!(vtype === 30 || vtype === 31 || vtype === 32)) return;
+    setForm((f) => {
+      if (f.moduleAddr.trim()) return f;
+      const id = f.modCatalogId || (vtype === 32 ? "chainwallet" : "dexlp");
+      const m = treasuryMods.find((x) => x.id === id) || treasuryMods.find((x) => x.address);
+      if (!m?.address) return f.modCatalogId === id ? f : { ...f, modCatalogId: id };
+      return { ...f, modCatalogId: m.id, moduleAddr: m.address };
+    });
+  }, [treasuryMods, vtype]);
 
   useEffect(() => {
     if (!catalog || queryApplied.current) return;
@@ -442,37 +479,59 @@ export function CreateReferendum() {
             </>
           ) : null}
 
-          {vtype === 30 ? (
+          {vtype === 30 || vtype === 31 || vtype === 32 ? (
             <>
               <label className="muted">
-                Адрес модуля
+                Модуль казны
+                <select
+                  data-testid="treasury-module-pick"
+                  value={form.modCatalogId || "custom"}
+                  onChange={(e) => applyModulePick(e.target.value)}
+                  style={inputStyle}
+                >
+                  {moduleChoices.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                  {!moduleChoices.some((m) => m.id === "custom") ? (
+                    <option value="custom">Свой модуль</option>
+                  ) : null}
+                </select>
+              </label>
+              {moduleChoices.find((m) => m.id === form.modCatalogId)?.hint ? (
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  {moduleChoices.find((m) => m.id === form.modCatalogId)?.hint}
+                </p>
+              ) : null}
+              <label className="muted">
+                Адрес модуля{form.modCatalogId === "custom" ? "" : " (подставлен из каталога)"}
                 <input
                   value={form.moduleAddr}
-                  onChange={(e) => patch("moduleAddr", e.target.value)}
+                  onChange={(e) => {
+                    patch("moduleAddr", e.target.value);
+                    if (form.modCatalogId !== "custom") patch("modCatalogId", "custom");
+                  }}
                   style={inputStyle}
+                  placeholder="EQ…"
                 />
-              </label>
-              <label className="muted row" style={{ gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={form.modDeny}
-                  onChange={(e) => patch("modDeny", e.target.checked)}
-                />
-                Отклеить (mod.deny)
               </label>
             </>
           ) : null}
 
+          {vtype === 30 ? (
+            <label className="muted row" style={{ gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={form.modDeny}
+                onChange={(e) => patch("modDeny", e.target.checked)}
+              />
+              Отклеить (mod.deny)
+            </label>
+          ) : null}
+
           {vtype === 31 ? (
             <>
-              <label className="muted">
-                Адрес модуля
-                <input
-                  value={form.moduleAddr}
-                  onChange={(e) => patch("moduleAddr", e.target.value)}
-                  style={inputStyle}
-                />
-              </label>
               <label className="muted">
                 Команда
                 <select
@@ -544,14 +603,6 @@ export function CreateReferendum() {
 
           {vtype === 32 ? (
             <>
-              <label className="muted">
-                ChainWallet (модуль)
-                <input
-                  value={form.moduleAddr}
-                  onChange={(e) => patch("moduleAddr", e.target.value)}
-                  style={inputStyle}
-                />
-              </label>
               <label className="muted">
                 TRON-адрес (T…)
                 <input value={form.chainDest} onChange={(e) => patch("chainDest", e.target.value)} style={inputStyle} />
@@ -700,6 +751,8 @@ function applyQueryPreset(
     next.modDecimals = decimals;
   }
   if (module) next.moduleAddr = module;
+  const modCat = q.get("modCatalogId") || q.get("modCatalog") || q.get("item");
+  if (modCat === "dexlp" || modCat === "chainwallet" || modCat === "custom") next.modCatalogId = modCat;
   if (minTon) next.convertMinTon = minTon;
   if (dest) {
     next.modDest = dest;

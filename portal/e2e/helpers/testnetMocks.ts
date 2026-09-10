@@ -146,6 +146,13 @@ export async function installTestnetMocks(page: Page) {
               hint: "kind=1",
             },
             {
+              id: "mod-allow",
+              vtype: 30,
+              category: "treasury",
+              label: "Приклеить / отклеить модуль",
+              hint: "mod.allow",
+            },
+            {
               id: "priv-enable",
               vtype: 11,
               category: "funds",
@@ -162,6 +169,34 @@ export async function installTestnetMocks(page: Page) {
               hint: "fund.topup",
               require: { topupActive: false },
             },
+          ],
+        },
+      });
+      return;
+    }
+    if (path.includes("/v1/platform/treasury-modules")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          version: 1,
+          dao: E2E_DAO,
+          guardian: E2E_WALLET,
+          modules: [
+            {
+              id: "dexlp",
+              label: "DexLP",
+              hint: "LP vault",
+              address: "EQDexLpE2E000000000000000000000000000000000001",
+              vtypes: [30, 31],
+            },
+            {
+              id: "chainwallet",
+              label: "ChainWallet",
+              hint: "TRC-20",
+              address: "EQChainWalletE2E00000000000000000000000000001",
+              vtypes: [30, 31, 32],
+            },
+            { id: "custom", label: "Свой модуль", hint: "EQ…", address: null, vtypes: [30, 31, 32] },
           ],
         },
       });
