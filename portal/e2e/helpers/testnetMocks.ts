@@ -184,6 +184,7 @@ export async function installTestnetMocks(page: Page) {
           modules: [
             {
               id: "dexlp",
+              kind: "module",
               label: "DexLP",
               hint: "LP vault",
               address: "EQDexLpE2E000000000000000000000000000000000001",
@@ -191,12 +192,31 @@ export async function installTestnetMocks(page: Page) {
             },
             {
               id: "chainwallet",
+              kind: "module",
               label: "ChainWallet",
               hint: "TRC-20",
               address: "EQChainWalletE2E00000000000000000000000000001",
               vtypes: [30, 31, 32],
             },
-            { id: "custom", label: "Свой модуль", hint: "EQ…", address: null, vtypes: [30, 31, 32] },
+            {
+              id: "priv_fund",
+              kind: "fund",
+              label: "Фонд приватизации",
+              hint: "privatization",
+              hubAppId: "priv_fund",
+              address: "EQPrivFundE2E000000000000000000000000000000001",
+              vtypes: [7, 11, 30, 31],
+            },
+            {
+              id: "treasury_topup",
+              kind: "fund",
+              label: "Фонд автопополнения казны",
+              hint: "topup",
+              hubAppId: "treasury_topup",
+              address: "EQTopupFundE2E00000000000000000000000000000001",
+              vtypes: [14, 30, 31],
+            },
+            { id: "custom", kind: "module", label: "Свой модуль", hint: "EQ…", address: null, vtypes: [30, 31, 32] },
           ],
         },
       });

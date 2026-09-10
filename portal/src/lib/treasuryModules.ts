@@ -1,16 +1,24 @@
 import { civicGet } from "./civic";
 import { DAO_ADDRESS } from "./config";
 import { chainWalletAddress, dexLpAddress } from "./treasuryOps";
-import { fetchDaoCreator } from "../ton/rpc";
+import { fetchDaoCreator, fetchPrivatizationStatus, fetchTreasuryTopupFund } from "../ton/rpc";
 
-export type TreasuryModuleId = "dexlp" | "chainwallet" | "custom" | string;
+export type TreasuryModuleId =
+  | "dexlp"
+  | "chainwallet"
+  | "priv_fund"
+  | "treasury_topup"
+  | "custom"
+  | string;
 
 export type TreasuryModuleEntry = {
   id: TreasuryModuleId;
+  kind?: "module" | "fund" | string;
   label: string;
   hint: string;
   codeHash?: string | null;
   needsGuardian?: boolean;
+  hubAppId?: string;
   vtypes?: number[];
   address?: string | null;
 };
@@ -26,6 +34,7 @@ export type TreasuryModulesCatalog = {
 export const BUNDLED_TREASURY_MODULES: TreasuryModuleEntry[] = [
   {
     id: "dexlp",
+    kind: "module",
     label: "DexLP",
     hint: "DeDust LP vault · guardian = creator DAO",
     needsGuardian: true,
@@ -33,13 +42,33 @@ export const BUNDLED_TREASURY_MODULES: TreasuryModuleEntry[] = [
   },
   {
     id: "chainwallet",
+    kind: "module",
     label: "ChainWallet (USDT TRC-20)",
     hint: "Мультивалютная казна · payout vtype 32",
     needsGuardian: false,
     vtypes: [30, 31, 32],
   },
   {
+    id: "priv_fund",
+    kind: "fund",
+    label: "Фонд приватизации",
+    hint: "hub.on.priv_fund · unlock vtype 7",
+    needsGuardian: true,
+    hubAppId: "priv_fund",
+    vtypes: [7, 11, 30, 31],
+  },
+  {
+    id: "treasury_topup",
+    kind: "fund",
+    label: "Фонд автопополнения казны",
+    hint: "fund.topup.* · vtype 14",
+    needsGuardian: false,
+    hubAppId: "treasury_topup",
+    vtypes: [14, 30, 31],
+  },
+  {
     id: "custom",
+    kind: "module",
     label: "Свой модуль",
     hint: "Любой EQ… на шине mod.allow / mod.exec",
     needsGuardian: false,
@@ -51,12 +80,12 @@ async function resolveLocalAddresses(
   modules: TreasuryModuleEntry[],
   dao: string,
 ): Promise<{ modules: TreasuryModuleEntry[]; guardian: string | null }> {
-  let guardian: string | null = null;
-  try {
-    guardian = await fetchDaoCreator(dao);
-  } catch {
-    guardian = null;
-  }
+  const [guardian, priv, topup] = await Promise.all([
+    fetchDaoCreator(dao).catch(() => null),
+    fetchPrivatizationStatus(dao).catch(() => ({ fund: null as string | null, live: false })),
+    fetchTreasuryTopupFund(dao).catch(() => null),
+  ]);
+
   const out = modules.map((m) => {
     if (m.address) return m;
     if (m.id === "chainwallet") {
@@ -72,6 +101,12 @@ async function resolveLocalAddresses(
       } catch {
         return m;
       }
+    }
+    if (m.id === "priv_fund" && priv.fund) {
+      return { ...m, address: priv.fund };
+    }
+    if (m.id === "treasury_topup" && topup) {
+      return { ...m, address: topup };
     }
     return m;
   });
@@ -101,7 +136,12 @@ export async function loadTreasuryModules(
     const cat = normalize(j);
     if (cat) {
       const needsLocal = cat.modules.some(
-        (m) => (m.id === "dexlp" || m.id === "chainwallet") && !m.address,
+        (m) =>
+          (m.id === "dexlp" ||
+            m.id === "chainwallet" ||
+            m.id === "priv_fund" ||
+            m.id === "treasury_topup") &&
+          !m.address,
       );
       if (needsLocal) {
         const { modules, guardian } = await resolveLocalAddresses(cat.modules, dao);
@@ -117,7 +157,7 @@ export async function loadTreasuryModules(
   }
   const { modules, guardian } = await resolveLocalAddresses(BUNDLED_TREASURY_MODULES, dao);
   return {
-    catalog: { version: 1, dao, guardian, modules },
+    catalog: { version: 2, dao, guardian, modules },
     source: "bundle",
   };
 }

@@ -196,6 +196,11 @@ export async function fetchPrivatizationStatus(container: string): Promise<{
   return { fund, live: unlocked != null && unlocked !== 0 };
 }
 
+/** Child treasury top-up fund (`get_treasury_topup_fund`). */
+export async function fetchTreasuryTopupFund(container: string): Promise<string | null> {
+  return stackAddr(await tcRun(container, "get_treasury_topup_fund"));
+}
+
 /**
  * Full params dict from chain (`get_params`).
  * Civic `params:` snapshots can be truncated — never treat a 1-row list as complete.

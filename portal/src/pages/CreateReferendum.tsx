@@ -491,7 +491,7 @@ export function CreateReferendum() {
                 >
                   {moduleChoices.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.label}
+                      {m.kind === "fund" ? `Фонд · ${m.label}` : m.label}
                     </option>
                   ))}
                   {!moduleChoices.some((m) => m.id === "custom") ? (
@@ -752,7 +752,9 @@ function applyQueryPreset(
   }
   if (module) next.moduleAddr = module;
   const modCat = q.get("modCatalogId") || q.get("modCatalog") || q.get("item");
-  if (modCat === "dexlp" || modCat === "chainwallet" || modCat === "custom") next.modCatalogId = modCat;
+  if (modCat === "dexlp" || modCat === "chainwallet" || modCat === "custom" || modCat === "priv_fund" || modCat === "treasury_topup") {
+    next.modCatalogId = modCat;
+  }
   if (minTon) next.convertMinTon = minTon;
   if (dest) {
     next.modDest = dest;

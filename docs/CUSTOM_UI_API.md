@@ -330,11 +330,11 @@ POST /v1/passport/issue
 GET /v1/platform/treasury-modules?dao=EQ…
 ```
 
-Ответ: `{ ok, version, dao, guardian, modules: [{ id, label, hint, codeHash, needsGuardian, vtypes, address }] }`.
+Ответ: `{ ok, version, dao, guardian, privatizationFund, treasuryTopupFund, modules: [{ id, kind, label, hint, codeHash, needsGuardian, hubAppId, vtypes, address }] }`.
 
-Используется кабинетом при create **vtype 30/31/32** (приклеить / исполнить / USDT TRC-20). Без `dao` — только список; с `dao` — детерминированные адреса DexLP (guardian = `get_creator`) и ChainWallet.
+Модули шины: `dexlp`, `chainwallet`, `custom`. Фонды: `priv_fund` (приватизация), `treasury_topup` (автопополнение). С `dao=` verifier резолвит адреса (геттеры + детерминизм где есть код).
 
-Новый модуль на платформе → правка `civic-verifier/treasuryModulesCatalog.mjs` (кабинеты подтянут без релиза UI).
+Используется кабинетом при create **vtype 30/31/32** и для фондов (7 / 11 / 14). Новый модуль → `civic-verifier/treasuryModulesCatalog.mjs`.
 
 ---
 
