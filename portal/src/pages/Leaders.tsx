@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useMemo } from "react";
 import { useApp } from "../state/AppState";
 import { shortAddr } from "../lib/civic";
+import { bioToPlain } from "../ton/safeHtml";
 
 /** Opinion leaders / deputies ranked by votes — public. */
 export function Leaders() {
@@ -27,7 +28,7 @@ export function Leaders() {
         <article key={d.address || i} className="card" data-testid="leader-card">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <strong>
-              {i + 1}. {d.name || shortAddr(d.address || "", 4, 4)}
+              {i + 1}. {d.name || (d as { fullName?: string }).fullName || shortAddr(d.address || "", 4, 4)}
             </strong>
             {d.votes != null ? (
               <span className="badge badge-ok">
@@ -36,7 +37,7 @@ export function Leaders() {
             ) : null}
           </div>
           {d.age ? <p className="muted">{d.age}</p> : null}
-          {d.bio ? <p className="muted">{d.bio}</p> : null}
+          {d.bio ? <p className="muted">{bioToPlain(d.bio, 160)}</p> : null}
           {d.address ? <p className="muted">{shortAddr(d.address, 6, 4)}</p> : null}
         </article>
       ))}
