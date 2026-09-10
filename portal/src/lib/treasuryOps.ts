@@ -1,7 +1,8 @@
 import { Address, beginCell, Cell, contractAddress, storeStateInit, toNano } from "@ton/core";
 import { Buffer } from "buffer";
-import { DAO_ADDRESS, civicBase } from "./config";
+import { DAO_ADDRESS } from "./config";
 import type { DaoParam } from "./civic";
+import { civicFetch } from "./civicFetch";
 import { CHAINWALLET_CODE_B64 } from "../ton/chainWalletCode.generated";
 import { DEXLP_CODE_B64 } from "../ton/dexLpCode.generated";
 
@@ -111,7 +112,7 @@ export function nanoToTon(nano: number): number {
 
 export async function fetchConvertStatus(dao = DAO_ADDRESS): Promise<ConvertStatus | null> {
   try {
-    const res = await fetch(`${civicBase()}/v1/convert/status?dao=${encodeURIComponent(dao)}`, {
+    const res = await civicFetch(`/v1/convert/status?dao=${encodeURIComponent(dao)}`, {
       credentials: "omit",
     });
     if (!res.ok) return null;

@@ -1,5 +1,6 @@
 import { Address } from "@ton/core";
 import { cacheBase, civicBase, DAO_ADDRESS, OFFICIAL_UI } from "./config";
+import { civicFetch } from "./civicFetch";
 
 export type CacheEnvelope<T> = {
   ok: boolean;
@@ -114,7 +115,14 @@ async function sleep(ms: number) {
 export async function civicGet<T>(path: string): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < 4; i++) {
-    const res = await fetch(`${civicBase()}${path}`, { credentials: "omit" });
+    let res: Response;
+    try {
+      res = await civicFetch(path);
+    } catch (e) {
+      lastErr = e;
+      await sleep(400 * (i + 1));
+      continue;
+    }
     if (res.status === 429) {
       await sleep(800 * (i + 1));
       continue;

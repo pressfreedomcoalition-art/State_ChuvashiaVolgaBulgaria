@@ -1,5 +1,5 @@
 import { Address } from "@ton/core";
-import { cacheBase, civicBase, DAO_ADDRESS } from "./config";
+import { cacheBase, civicFetchBases, DAO_ADDRESS } from "./config";
 import { cacheGet, type DaoParam } from "./civic";
 import { fetchDaoParamsOnChain } from "../ton/rpc";
 
@@ -24,8 +24,17 @@ export function paramsCatalogLooksComplete(params: DaoParam[] | null | undefined
   );
 }
 
+function cacheAndCivicBases(): string[] {
+  const out: string[] = [];
+  for (const b of [cacheBase(), ...civicFetchBases()]) {
+    const n = String(b || "").replace(/\/$/, "");
+    if (n && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
 async function cacheRefresh(key: string, force = false): Promise<DaoParam[] | null> {
-  const bases = [cacheBase(), civicBase()].filter((b, i, a) => a.indexOf(b) === i);
+  const bases = cacheAndCivicBases();
   for (const base of bases) {
     try {
       const ctrl = new AbortController();
@@ -49,7 +58,7 @@ async function cacheRefresh(key: string, force = false): Promise<DaoParam[] | nu
 }
 
 async function cachePeek(key: string): Promise<DaoParam[] | null> {
-  const bases = [cacheBase(), civicBase()].filter((b, i, a) => a.indexOf(b) === i);
+  const bases = cacheAndCivicBases();
   for (const base of bases) {
     try {
       const res = await fetch(`${base}/v1/cache/peek?key=${encodeURIComponent(key)}`, {

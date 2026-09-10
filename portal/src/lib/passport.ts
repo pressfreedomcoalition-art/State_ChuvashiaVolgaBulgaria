@@ -1,5 +1,4 @@
 import * as jose from "jose";
-import { civicBase } from "./config";
 import { t, getLang } from "./i18n";
 import {
   authenticateBiometric,
@@ -10,12 +9,9 @@ import {
   savePassportVault,
   type PassportRecord,
 } from "./passportVault";
+import { civicFetch } from "./civicFetch";
 
 const AUDIENCE = "blc-civic-verifier";
-
-function verifierBase() {
-  return civicBase().replace(/\/$/, "");
-}
 
 function b64(u8: Uint8Array): string {
   let s = "";
@@ -110,7 +106,7 @@ export async function createPresentation(
 
 export async function restoreFromPhrase(phrase: string): Promise<PassportRecord> {
   const normalized = phrase.trim().toLowerCase().replace(/\s+/g, " ");
-  const r = await fetch(`${verifierBase()}/v1/passport/restore`, {
+  const r = await civicFetch("/v1/passport/restore", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ phrase: normalized }),
@@ -142,7 +138,7 @@ export async function issuePassport(): Promise<PassportRecord & { restorePhrase?
   const keys = await createHolderKeyPair();
   let r: Response;
   try {
-    r = await fetch(`${verifierBase()}/v1/passport/issue`, {
+    r = await civicFetch("/v1/passport/issue", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ holderPublicJwk: keys.publicJwk, deviceBind: null }),
@@ -175,7 +171,7 @@ export async function issuePassport(): Promise<PassportRecord & { restorePhrase?
   try {
     const presentation = await createPresentation(rec);
     const provisional = await encryptPassportRecord(rec, "provisional");
-    const alloc = await fetch(`${verifierBase()}/v1/passport/backup`, {
+    const alloc = await civicFetch("/v1/passport/backup", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -188,7 +184,7 @@ export async function issuePassport(): Promise<PassportRecord & { restorePhrase?
     const a = (await alloc.json()) as { ok?: boolean; phrase?: string };
     if (a.ok && a.phrase) {
       const real = await encryptPassportRecord(rec, a.phrase);
-      await fetch(`${verifierBase()}/v1/passport/backup`, {
+      await civicFetch("/v1/passport/backup", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

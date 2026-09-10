@@ -3,17 +3,13 @@
  * Prefer ~0.01 TON memo proof (DAO path) — signData freezes many wallets (MyWallet ANR).
  */
 import { beginCell, toNano } from "@ton/core";
-import { civicBase } from "./config";
+import { civicFetch } from "./civicFetch";
 import { decryptPassportRecord, encryptPassportRecord } from "./passport";
 import {
   openPassportSession,
   savePassportVault,
   type PassportRecord,
 } from "./passportVault";
-
-function verifierBase() {
-  return civicBase().replace(/\/$/, "");
-}
 
 async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", data as BufferSource));
@@ -47,7 +43,7 @@ export type PassportBackupStatus = {
 };
 
 export async function fetchPassportBackupStatus(presentation: string): Promise<PassportBackupStatus> {
-  const r = await fetch(`${verifierBase()}/v1/passport/backup/status`, {
+  const r = await civicFetch("/v1/passport/backup/status", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ presentation }),
@@ -136,7 +132,7 @@ async function pollWalletRestoreMemo(challengeId: string): Promise<{
   let lastErr = "tx_not_found";
   for (let i = 0; i < 8; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 4000));
-    const r = await fetch(`${verifierBase()}/v1/passport/restore/wallet`, {
+    const r = await civicFetch("/v1/passport/restore/wallet", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ challengeId, proof: "memo" }),
@@ -177,7 +173,7 @@ export async function bindWalletBackup(
     tonConnectUI.openModal?.();
     throw new Error("connect_wallet");
   }
-  const chalRes = await fetch(`${verifierBase()}/v1/passport/backup/wallet/challenge`, {
+  const chalRes = await civicFetch("/v1/passport/backup/wallet/challenge", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -212,7 +208,7 @@ export async function bindWalletBackup(
     let lastErr = "tx_not_found";
     for (let i = 0; i < 8; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
-      const r = await fetch(`${verifierBase()}/v1/passport/backup/wallet`, {
+      const r = await civicFetch("/v1/passport/backup/wallet", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -246,7 +242,7 @@ export async function restoreFromWallet(tonConnectUI: TonConnectSignLike): Promi
     tonConnectUI.openModal?.();
     throw new Error("connect_wallet");
   }
-  const chalRes = await fetch(`${verifierBase()}/v1/passport/backup/wallet/challenge`, {
+  const chalRes = await civicFetch("/v1/passport/backup/wallet/challenge", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ purpose: "restore", wallet: account.address }),
@@ -286,7 +282,7 @@ export async function restoreFromWallet(tonConnectUI: TonConnectSignLike): Promi
 }
 
 export async function unbindWalletBackup(presentation: string, wallet: string): Promise<void> {
-  const r = await fetch(`${verifierBase()}/v1/passport/backup/wallet/unbind`, {
+  const r = await civicFetch("/v1/passport/backup/wallet/unbind", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ presentation, wallet }),

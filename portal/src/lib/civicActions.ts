@@ -1,6 +1,7 @@
 import { Address, beginCell, toNano } from "@ton/core";
-import { civicBase, DAO_ADDRESS } from "./config";
+import { DAO_ADDRESS } from "./config";
 import { cacheGet } from "./civic";
+import { civicFetch, civicPostJson } from "./civicFetch";
 import { ensurePresentation, issuePassport } from "./passport";
 import { parseContainerSides, resolveJettonWallet } from "./tonResolve";
 import { t, getLang } from "./i18n";
@@ -21,25 +22,7 @@ type TonTxUi = {
 const OP_CLAIM_PAY = 0x5adc0011;
 
 async function civicPost<T>(path: string, body: unknown): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${civicBase()}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    if (/failed to fetch|networkerror|load failed/i.test(raw)) {
-      throw new Error(t(getLang(), "errCivicNetwork"));
-    }
-    throw e instanceof Error ? e : new Error(raw);
-  }
-  const j = (await res.json().catch(() => ({}))) as T & { ok?: boolean; error?: string; code?: string };
-  if (!res.ok || (j as { ok?: boolean }).ok === false) {
-    throw new Error((j as { code?: string; error?: string }).code || (j as { error?: string }).error || `HTTP ${res.status}`);
-  }
-  return j;
+  return civicPostJson<T>(path, body);
 }
 
 /** TonConnect often yields UQ… — verifier expects bounceable EQ…. */
@@ -58,7 +41,7 @@ export async function resolveDaoModules(dao = DAO_ADDRESS) {
   // Last resort: platform peek (own cache may be warm for params but empty for sides).
   try {
     const peekPath = `/v1/cache/peek?key=${encodeURIComponent(`containerSides:${dao}`)}`;
-    const res = await fetch(`${civicBase()}${peekPath}`, { credentials: "omit" });
+    const res = await civicFetch(peekPath);
     if (res.ok) {
       const j = (await res.json()) as { ok?: boolean; value?: string[] };
       if (j?.ok && Array.isArray(j.value) && j.value.length) {
@@ -187,19 +170,23 @@ export async function claimCitizenshipPay(opts: {
     txHash,
   };
 
-  let c = await fetch(`${civicBase()}/v1/citizenship/claim-pay`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(claimBody),
-  }).then((r) => r.json() as Promise<{ ok?: boolean; code?: string; error?: string; paths?: string[] }>);
-
-  for (let i = 0; i < 5 && !c.ok && (c.code === "tx_not_found" || c.code === "payment_not_found"); i++) {
-    await new Promise((r) => setTimeout(r, isE2eTestnet() ? 10 : 5000));
-    c = await fetch(`${civicBase()}/v1/citizenship/claim-pay`, {
+  let c = (await (
+    await civicFetch("/v1/citizenship/claim-pay", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(claimBody),
-    }).then((r) => r.json());
+    })
+  ).json()) as { ok?: boolean; code?: string; error?: string; paths?: string[] };
+
+  for (let i = 0; i < 5 && !c.ok && (c.code === "tx_not_found" || c.code === "payment_not_found"); i++) {
+    await new Promise((r) => setTimeout(r, isE2eTestnet() ? 10 : 5000));
+    c = (await (
+      await civicFetch("/v1/citizenship/claim-pay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(claimBody),
+      })
+    ).json()) as typeof c;
   }
   if (!c.ok) throw new Error(c.code || c.error || "pay claim fail");
   return c;
@@ -243,7 +230,7 @@ export async function claimCitizenshipDocs(opts?: {
   if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
   const presentation = await ensurePassportPresentation(reason("unlockReasonDocsPath"));
   const claims = opts?.claims;
-  const res = await fetch(`${civicBase()}/v1/citizenship/claim-docs`, {
+  const res = await civicFetch("/v1/citizenship/claim-docs", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

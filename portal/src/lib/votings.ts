@@ -1,5 +1,5 @@
 import { Address } from "@ton/core";
-import { DAO_ADDRESS, civicBase, cacheBase } from "./config";
+import { DAO_ADDRESS, cacheBase, civicFetchBases } from "./config";
 import { cacheGet, type VotingRow } from "./civic";
 
 type RawVoting = VotingRow & {
@@ -15,6 +15,17 @@ function bounceKey(dao: string) {
   } catch {
     return dao;
   }
+}
+
+function cacheAndCivicBases(preferCivicFirst = false): string[] {
+  const civic = civicFetchBases().map((b) => b.replace(/\/$/, ""));
+  const cache = cacheBase().replace(/\/$/, "");
+  const ordered = preferCivicFirst ? [...civic, cache] : [cache, ...civic];
+  const out: string[] = [];
+  for (const b of ordered) {
+    if (b && !out.includes(b)) out.push(b);
+  }
+  return out;
 }
 
 function normalizeVoting(raw: RawVoting): VotingRow | null {
@@ -66,7 +77,7 @@ function asVotingList(value: unknown): VotingRow[] {
 }
 
 async function cacheRefresh(key: string, force = false): Promise<unknown | null> {
-  const bases = [cacheBase(), civicBase()].filter((b, i, a) => a.indexOf(b) === i);
+  const bases = cacheAndCivicBases(false);
   for (const base of bases) {
     try {
       const ctrl = new AbortController();
@@ -91,7 +102,7 @@ async function cacheRefresh(key: string, force = false): Promise<unknown | null>
 
 async function cachePeek(key: string): Promise<unknown | null> {
   // Prefer platform civic first when own tunnel is flaky — list often 404 while peek is warm.
-  const bases = [civicBase(), cacheBase()].filter((b, i, a) => a.indexOf(b) === i);
+  const bases = cacheAndCivicBases(true);
   for (const base of bases) {
     try {
       const ctrl = new AbortController();

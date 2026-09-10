@@ -20,6 +20,11 @@ function forceWonCivic() {
   }
 }
 
+const STICKY_CIVIC_KEY = "chv_civic_base_v1";
+
+const WON_CIVIC = "https://dao.won.onl/civic";
+const BLC_CIVIC = "https://dao.blc.cab/civic";
+
 /** Static portal hosts: prefer won.onl civic (no CF) so RF users can reach API. */
 function preferWonCivic() {
   if (forceWonCivic()) return true;
@@ -31,10 +36,47 @@ function preferWonCivic() {
   );
 }
 
+function readStickyCivic(): string {
+  try {
+    const v = String(sessionStorage.getItem(STICKY_CIVIC_KEY) || "").trim().replace(/\/$/, "");
+    if (v === WON_CIVIC || v === BLC_CIVIC) return v;
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+export function rememberCivicBase(url: string) {
+  const base = String(url || "").trim().replace(/\/$/, "");
+  if (base !== WON_CIVIC && base !== BLC_CIVIC) return;
+  try {
+    sessionStorage.setItem(STICKY_CIVIC_KEY, base);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Ordered civic bases for fetch failover (sticky first, then preferred mirror). */
+export function civicFetchBases(): string[] {
+  if (isLocalHost()) return ["/civic"];
+  const sticky = readStickyCivic();
+  const primary = preferWonCivic() ? WON_CIVIC : BLC_CIVIC;
+  const secondary = primary === WON_CIVIC ? BLC_CIVIC : WON_CIVIC;
+  const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
+  const out: string[] = [];
+  for (const b of [sticky, primary, secondary, env]) {
+    if (b && !out.includes(b)) out.push(b);
+  }
+  return out.length ? out : [WON_CIVIC, BLC_CIVIC];
+}
+
 export function civicBase() {
   if (isLocalHost()) return "/civic";
-  if (preferWonCivic()) return "https://dao.won.onl/civic";
-  return import.meta.env.VITE_CIVIC_API || "https://dao.won.onl/civic";
+  const sticky = readStickyCivic();
+  if (sticky) return sticky;
+  if (preferWonCivic()) return WON_CIVIC;
+  const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
+  return env || WON_CIVIC;
 }
 
 /**

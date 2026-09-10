@@ -96,9 +96,28 @@ export function ActionError({
   onRetry?: () => void;
   onDismiss?: () => void;
 }) {
+  const { tt } = useApp();
   if (!error) return null;
   if (isTonConnectFail(error)) {
     return <TonConnectRecovery error={error} busy={busy} onRetry={onRetry} onDismiss={onDismiss} />;
   }
-  return <p style={{ color: "var(--maroon)", margin: 0 }}>{error}</p>;
+  return (
+    <div className="stack" data-testid="action-error">
+      <p style={{ color: "var(--maroon)", margin: 0 }}>{error}</p>
+      {onRetry || onDismiss ? (
+        <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+          {onRetry ? (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onRetry()}>
+              {tt("tryAgain")}
+            </button>
+          ) : null}
+          {onDismiss ? (
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={onDismiss}>
+              {tt("dismiss")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
