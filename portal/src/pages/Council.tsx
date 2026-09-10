@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { useApp } from "../state/AppState";
+import { SafeHtml } from "../components/SafeHtml";
+import { bioToPlain } from "../ton/safeHtml";
 
 export function Council() {
   const { tt, deputies } = useApp();
@@ -17,19 +19,41 @@ export function Council() {
           </Link>
         </div>
       ) : (
-        deputies.map((d, i) => (
-          <article key={d.address || i} className="card">
-            <strong>{d.name || d.address}</strong>
-            {d.age ? <p className="muted">{d.age}</p> : null}
-            {d.bio ? <p className="muted">{d.bio}</p> : null}
-            {d.votes != null ? <span className="badge">{String(d.votes)}</span> : null}
-            <div className="row" style={{ marginTop: 10 }}>
-              <Link className="btn btn-ghost" to="/referendums">
-                {tt("vote")}
-              </Link>
-            </div>
-          </article>
-        ))
+        deputies.map((d, i) => {
+          const title = d.name || (d as { fullName?: string }).fullName || d.address;
+          const photo = d.photo || (d as { photoUrl?: string }).photoUrl;
+          const bio = d.bio || "";
+          return (
+            <article key={d.address || i} className="card stack" style={{ gap: 8 }}>
+              <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
+                {photo ? (
+                  <img
+                    src={photo}
+                    alt=""
+                    style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover" }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : null}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>{title}</strong>
+                  {d.age ? <p className="muted" style={{ margin: "4px 0 0" }}>{d.age}</p> : null}
+                </div>
+                {d.votes != null ? <span className="badge">{String(d.votes)}</span> : null}
+              </div>
+              {bio ? (
+                /<[a-z][\s\S]*>/i.test(bio) ? (
+                  <SafeHtml html={bio} className="profile-bio" />
+                ) : (
+                  <p className="muted" style={{ margin: 0 }}>
+                    {bioToPlain(bio, 280)}
+                  </p>
+                )
+              ) : null}
+            </article>
+          );
+        })
       )}
 
       <div className="card stack" style={{ marginTop: 8 }}>

@@ -4,7 +4,7 @@
  * Inventory covered:
  * A. Citizenship — pay / docs / lang / wallet path UIs + claim actions (pay/docs/wallet)
  * B. Voting — list → detail → cast / finalize; create → auto-launch
- * C. Deputy — council list + become candidate → create referendum
+ * C. Deputy — council list + become candidate → on-chain profile publish
  */
 import { expect, test } from "@playwright/test";
 import { enableE2eSession, E2E_OPT_NO, E2E_OPT_YES, E2E_VOTING, installTestnetMocks } from "./helpers/testnetMocks";
@@ -143,17 +143,17 @@ test.describe("deputy nomination flow (testnet mocks)", () => {
     await expect(page.getByTestId("candidate-name")).toBeVisible();
   });
 
-  test("nominate via create decision referendum", async ({ page }) => {
+  test("nominate publishes deputy profile (e2e short-circuit)", async ({ page }) => {
     await page.goto("/council");
     await page.getByTestId("become-candidate").click({ timeout: 20_000 });
     await page.getByTestId("candidate-name").fill("Кандидат E2E");
-    await page.getByTestId("candidate-bio").fill("Программа E2E");
+    await page.getByTestId("candidate-bio").click();
+    await page.keyboard.type("Программа E2E");
+    await page.getByTestId("candidate-risk-ack").check();
     await page.getByTestId("candidate-continue").click();
-    await expect(page).toHaveURL(/referendums\/new/);
-    await expect(page.getByPlaceholder("Тема референдума")).toHaveValue(/Выдвижение|Nomination|Суйлав/i);
-    await page.getByTestId("create-voting-submit").click();
-    await expect(page).toHaveURL(/launch=1/, { timeout: 15_000 });
-    await expect(page.getByText(/Запущено/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Кандидат E2E")).toBeVisible();
+    await page.getByTestId("candidate-publish").click();
+    await expect(page).toHaveURL(/\/council$/, { timeout: 15_000 });
   });
 });
 
