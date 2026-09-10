@@ -36,6 +36,21 @@ export function formatDate(ts?: number | string): string {
   });
 }
 
+/** Date + time for voting deadlines. */
+export function formatDateTime(ts?: number | string): string {
+  if (!ts) return "";
+  const n = typeof ts === "string" ? Number(ts) : ts;
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const ms = n < 1e12 ? n * 1000 : n;
+  return new Date(ms).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function daysLeft(endsAt?: number | string): string {
   if (!endsAt) return "";
   const n = typeof endsAt === "string" ? Number(endsAt) : endsAt;

@@ -1,4 +1,4 @@
-import { Address, Cell, Dictionary } from "@ton/core";
+import { Address, beginCell, Cell, Dictionary } from "@ton/core";
 import { Buffer } from "buffer";
 import type { DaoParam } from "../lib/civic";
 
@@ -145,6 +145,55 @@ export async function fetchDaoCreator(container: string): Promise<string | null>
     if (i < 2) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
   }
   return null;
+}
+
+/** LightVoting `get_voted(voter)` — best-effort; civic nullifier votes may not show here. */
+export async function fetchVotingHasVoted(voting: string, voter: string): Promise<boolean | null> {
+  try {
+    const voterCell = beginCell().storeAddress(Address.parse(voter)).endCell().toBoc().toString("base64");
+    const data = await tcRun(voting, "get_voted", [["tvm.Slice", voterCell]]);
+    const n = stackNum(data);
+    if (n != null) return n !== 0;
+  } catch {
+    /* try tonapi */
+  }
+  try {
+    const res = await fetch(
+      `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(voting)}/methods/get_voted`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ args: [voter] }),
+      },
+    );
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      success?: boolean;
+      decoded?: { voted?: boolean } | boolean;
+      stack?: Array<{ type?: string; num?: string; value?: string | boolean }>;
+    };
+    if (!j.success) return null;
+    if (typeof j.decoded === "boolean") return j.decoded;
+    if (j.decoded && typeof j.decoded === "object" && "voted" in j.decoded) return !!j.decoded.voted;
+    const top = j.stack?.[0];
+    if (typeof top?.value === "boolean") return top.value;
+    if (top?.num != null) return Number(top.num) !== 0;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Privatization child + unlocked flag (`get_privatization_fund` / `get_unlocked`). */
+export async function fetchPrivatizationStatus(container: string): Promise<{
+  fund: string | null;
+  live: boolean;
+}> {
+  const fund = await stackAddr(await tcRun(container, "get_privatization_fund"));
+  if (!fund) return { fund: null, live: false };
+  const unlocked = stackNum(await tcRun(fund, "get_unlocked"));
+  return { fund, live: unlocked != null && unlocked !== 0 };
 }
 
 /**

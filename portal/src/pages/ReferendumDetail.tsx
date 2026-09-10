@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
-import { bounceableAddr, votingAwaitingFinalize, votingStatus, type VotingState } from "../lib/civic";
+import { bounceableAddr, endsAtMs, votingAwaitingFinalize, votingStatus, type VotingState } from "../lib/civic";
 import { castCivicVote } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
+import { formatDateTime } from "../lib/format";
 import { hasLocalVault, unlockPassportSilent } from "../lib/passport";
+import { hasLocalVoted, isAlreadyVotedError, markLocalVoted } from "../lib/voteLocal";
+import { fetchVotingHasVoted } from "../ton/rpc";
 import { ActionError } from "../components/TonConnectRecovery";
 
 function optionVotes(o: { votes?: number; weight?: number }) {
@@ -21,7 +24,7 @@ export function ReferendumDetail() {
   const wallet = resolveWallet(useTonAddress());
   const [ui] = useTonConnectUI();
   const [state, setState] = useState<VotingState | null>(null);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(() => hasLocalVoted(address, wallet));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
@@ -30,6 +33,12 @@ export function ReferendumDetail() {
 
   function fail(e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (isAlreadyVotedError(msg)) {
+      markLocalVoted(address, wallet);
+      setDone(true);
+      setErr("");
+      return;
+    }
     setErr(msg);
   }
 
@@ -38,6 +47,25 @@ export function ReferendumDetail() {
     setState(st);
     return st;
   }
+
+  useEffect(() => {
+    if (hasLocalVoted(address, wallet)) setDone(true);
+  }, [address, wallet]);
+
+  useEffect(() => {
+    if (!wallet || done) return;
+    let cancelled = false;
+    void (async () => {
+      const onChain = await fetchVotingHasVoted(address, wallet);
+      if (!cancelled && onChain === true) {
+        markLocalVoted(address, wallet);
+        setDone(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [address, wallet, done]);
 
   useEffect(() => {
     void reload();
@@ -53,10 +81,10 @@ export function ReferendumDetail() {
     let cancelled = false;
     void (async () => {
       setBusy(true);
-      setInfo("Ждём деплой опроса…");
+      setInfo(tt("launchWaitDeploy"));
       await new Promise((r) => setTimeout(r, isE2eTestnet() ? 50 : 12_000));
       if (cancelled) return;
-      setInfo("Добавляем опции и запускаем…");
+      setInfo(tt("launchAddingOpts"));
       try {
         await launchVoting({
           ui,
@@ -65,7 +93,7 @@ export function ReferendumDetail() {
           executable: pending.executable,
         });
         if (cancelled) return;
-        setInfo("Запущено");
+        setInfo(tt("launched"));
         await refresh();
         await reload();
       } catch (e) {
@@ -91,8 +119,10 @@ export function ReferendumDetail() {
   const options = state?.options || state?.results || row?.options || [];
   const total = options.reduce((s, o) => s + optionVotes(o), 0);
   const needFinalize = votingAwaitingFinalize(state || row);
-  const canVote = (st === "active" || st === "unknown") && !needFinalize;
+  const canVote = (st === "active" || st === "unknown") && !needFinalize && !done;
   const showFinalize = needFinalize && st !== "finished";
+  const endMs = endsAtMs(state || row);
+  const endLabel = endMs ? formatDateTime(endMs) : "";
 
   function statusLabel() {
     if (st === "finished") return tt("votingDone");
@@ -151,7 +181,7 @@ export function ReferendumDetail() {
 
     const idx = noLike ? 1 : 0;
     const chosen = opts[idx]?.address || opts[0]?.address;
-    if (!chosen) throw new Error("Нет адреса опции в кеше — обновите страницу через пару секунд");
+    if (!chosen) throw new Error(tt("noOptionAddr"));
     return chosen;
   }
 
@@ -161,11 +191,12 @@ export function ReferendumDetail() {
     setErr("");
     setInfo("");
     try {
-      if (!wallet) throw new Error("Подключите кошелёк");
-      if (!hasLocalVault()) throw new Error("Сначала разблокируйте паспорт");
+      if (!wallet) throw new Error(tt("connectWallet"));
+      if (!hasLocalVault()) throw new Error(tt("needUnlockPassport"));
       unlockPassportSilent();
       const chosen = await resolveOptionAddress(optionAddress, label);
       await castCivicVote({ voting: address, optionAddress: chosen, voter: wallet });
+      markLocalVoted(address, wallet);
       setDone(true);
       retryRef.current = null;
       await reload();
@@ -186,7 +217,7 @@ export function ReferendumDetail() {
         ? pending.opts
         : options.map((o) => o.title || o.text || "").filter(Boolean);
     if (titles.length < 2 && !pending?.opts?.length) {
-      setErr("Нужны минимум 2 опции (создайте голосование с вариантами или дождитесь кеша)");
+      setErr(tt("needTwoOptions"));
       return;
     }
     retryRef.current = () => void doLaunch();
@@ -199,7 +230,7 @@ export function ReferendumDetail() {
         optionTitles: titles.length >= 2 ? titles : pending!.opts,
         executable: pending?.executable,
       });
-      setInfo("Запущено");
+      setInfo(tt("launched"));
       retryRef.current = null;
       await refresh();
       await reload();
@@ -220,7 +251,7 @@ export function ReferendumDetail() {
     setErr("");
     try {
       await finalizeVoting({ ui, voting: address });
-      setInfo("Итог отправлен");
+      setInfo(tt("finalizeSent"));
       retryRef.current = null;
       await refresh();
       await reload();
@@ -237,9 +268,14 @@ export function ReferendumDetail() {
         ← {tt("referendums")}
       </Link>
       <h1 className="page-title">{title}</h1>
-      <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
-        {statusLabel()}
-      </span>
+      <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>{statusLabel()}</span>
+        {endLabel ? (
+          <span className="muted" data-testid="voting-ends-at">
+            {st === "finished" || needFinalize ? tt("endedAt", { when: endLabel }) : tt("endsAt", { when: endLabel })}
+          </span>
+        ) : null}
+      </div>
       {desc ? (
         <div className="card">
           <p>{desc}</p>
@@ -248,25 +284,23 @@ export function ReferendumDetail() {
 
       {st === "pending" || (pending && st !== "awaiting_finalize" && !showFinalize) ? (
         <div className="card">
-          <h3>Запуск</h3>
-          <p className="muted">Добавить опции и отправить «start» на контракт опроса.</p>
+          <h3>{tt("launchTitle")}</h3>
+          <p className="muted">{tt("launchHint")}</p>
           <button className="btn btn-primary" disabled={busy} data-testid="voting-launch" onClick={() => void doLaunch()}>
-            Запустить референдум
+            {tt("launchVote")}
           </button>
         </div>
       ) : null}
 
-      {/* Always show tallies when we have a snapshot or placeholders */}
       {st !== "pending" || options.length > 0 ? <ResultsBars /> : null}
 
       {done ? (
-        <div className="card" style={{ textAlign: "center" }}>
+        <div className="card" style={{ textAlign: "center" }} data-testid="already-voted">
           <p style={{ color: "var(--ok)", fontWeight: 700 }}>{tt("voted")}</p>
         </div>
       ) : canVote ? (
         <div className="card">
           <h3>{tt("vote")}</h3>
-          <p className="muted">{tt("voteSilentHint")}</p>
           {options.length >= 2 && options.some((o) => o.address) ? (
             <div className="row" style={{ flexWrap: "wrap" }}>
               {options.map((o) => (

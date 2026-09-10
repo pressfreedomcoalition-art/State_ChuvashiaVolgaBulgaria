@@ -19,51 +19,51 @@ const CATS: { id: Cat; title: string; items: { v: CreateVtype; label: string; hi
   {
     id: "decisions",
     title: "Решения",
-    items: [{ v: 0, label: "Референдум / решение", hint: "Без ончейн-исполнения — только мнение граждан" }],
+    items: [{ v: 0, label: "Референдум / решение", hint: "Только мнение граждан — без исполнения из казны" }],
   },
   {
     id: "citizenship",
     title: "Гражданство",
     items: [
-      { v: 6, label: "Путь гражданства (DaoParam)", hint: "cit.path.* — вкл/настройка пути" },
-      { v: 12, label: "Включить бан по голосу", hint: "cit.ban.enabled=1" },
-      { v: 13, label: "Бан гражданина", hint: "cit.ban.* payload" },
-      { v: 19, label: "Открыть NFT-паспорт", hint: "nft.passport.open" },
-      { v: 16, label: "Пароль / sec", hint: "sec.password" },
-      { v: 17, label: "Газ из казны", hint: "gas.treasury=1" },
+      { v: 6, label: "Путь гражданства", hint: "Включить или настроить способ получения гражданства" },
+      { v: 12, label: "Включить бан по голосу", hint: "Разрешить исключение гражданина голосованием" },
+      { v: 13, label: "Бан гражданина", hint: "Исключить конкретного гражданина" },
+      { v: 19, label: "Открыть NFT-паспорт", hint: "Разрешить выпуск NFT-паспорта" },
+      { v: 16, label: "Пароль доступа", hint: "Настройка пароля / защиты" },
+      { v: 17, label: "Газ из казны", hint: "Оплата газа голосований из казны" },
     ],
   },
   {
     id: "treasury",
     title: "Казна",
     items: [
-      { v: 1, label: "Выплата из казны", hint: "kind=1 · За/Против · исполнение" },
-      { v: 18, label: "Автоконверт (порог TON)", hint: "fund.convert.ton.min" },
-      { v: 20, label: "Буфер конверта", hint: "выплата жетона на hot-wallet" },
-      { v: 30, label: "Приклеить / отклеить модуль", hint: "mod.allow / mod.deny" },
-      { v: 31, label: "Исполнить на модуле", hint: "mod.exec.* · DexLP / custom" },
-      { v: 32, label: "Выплата USDT TRC-20", hint: "mod.exec.forward · ChainEnqueue" },
+      { v: 1, label: "Выплата из казны", hint: "За / Против — выплата после принятия" },
+      { v: 18, label: "Автоконверт (порог TON)", hint: "Когда конвертировать жетон в TON" },
+      { v: 20, label: "Буфер конверта", hint: "Пополнить операционный буфер" },
+      { v: 30, label: "Приклеить / отклеить модуль", hint: "Подключить или отключить модуль казны" },
+      { v: 31, label: "Исполнить на модуле", hint: "Действие на подключённом модуле" },
+      { v: 32, label: "Выплата USDT TRC-20", hint: "Выплата в USDT через мультивалютный модуль" },
     ],
   },
   {
     id: "settings",
     title: "Настройки",
     items: [
-      { v: 2, label: "Изменить DaoConfig", hint: "кворум / поддержка / длительность / лого" },
-      { v: 4, label: "Произвольный DaoParam", hint: "любой ключ kind=4" },
+      { v: 2, label: "Правила голосований", hint: "Кворум, поддержка, длительность, логотип" },
+      { v: 4, label: "Параметр ДАО", hint: "Изменить произвольный параметр" },
     ],
   },
   {
     id: "hub",
     title: "Хаб",
-    items: [{ v: 10, label: "Короткий URL", hint: "short_url" }],
+    items: [{ v: 10, label: "Короткий URL", hint: "Короткая ссылка на ДАО" }],
   },
   {
     id: "parties",
     title: "Партии",
     items: [
-      { v: 21, label: "Разрешить партии", hint: "party.allow" },
-      { v: 22, label: "Разрешить вступление", hint: "party.become" },
+      { v: 21, label: "Разрешить партии", hint: "Включить создание партий" },
+      { v: 22, label: "Разрешить вступление", hint: "Включить вступление в партии" },
     ],
   },
 ];
@@ -281,12 +281,12 @@ export function CreateReferendum() {
                 />
               </label>
               <label className="muted">
-                Jetton wallet казны (EQ…)
+                Кошелёк жетона казны (EQ…)
                 <input
                   value={form.payoutWallet}
                   onChange={(e) => patch("payoutWallet", e.target.value)}
                   style={inputStyle}
-                  placeholder="пусто = voteJettonWallet контейнера"
+                  placeholder="оставьте пустым — возьмём из ДАО"
                 />
               </label>
               <label className="muted">
@@ -303,7 +303,7 @@ export function CreateReferendum() {
               </label>
               <p className="muted">
                 {vtype === 20
-                  ? "Буфер конверта: жетон на hot-wallet ops."
+                  ? "Пополнение операционного буфера конверта."
                   : "Опции За/Против добавятся автоматически; «За» исполнит выплату."}
               </p>
             </>
@@ -336,7 +336,7 @@ export function CreateReferendum() {
                   checked={form.modDeny}
                   onChange={(e) => patch("modDeny", e.target.checked)}
                 />
-                Отклеить (mod.deny)
+                Отклеить модуль
               </label>
             </>
           ) : null}
@@ -476,7 +476,7 @@ export function CreateReferendum() {
           {vtype === 4 || vtype === 6 || vtype === 13 ? (
             <>
               <label className="muted">
-                Ключ DaoParam
+                Ключ параметра
                 <input value={form.paramKey} onChange={(e) => patch("paramKey", e.target.value)} style={inputStyle} />
               </label>
               <label className="muted row" style={{ gap: 8, alignItems: "center" }}>
@@ -509,7 +509,7 @@ export function CreateReferendum() {
           ) : null}
 
           {vtype !== 0 ? (
-            <p className="muted">Исполняемое голосование: опции «За» / «Против» фиксированы контрактом.</p>
+            <p className="muted">Исполняемое голосование: опции «За» / «Против» заданы заранее.</p>
           ) : null}
 
           <button

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../state/AppState";
-import { votingAddress, votingStatus } from "../lib/civic";
+import { endsAtMs, votingAddress, votingStatus } from "../lib/civic";
+import { formatDateTime } from "../lib/format";
 
 export function Referendums() {
   const { tt, votings, loading, refresh, error } = useApp();
@@ -50,6 +51,8 @@ export function Referendums() {
       {votings.map((v) => {
         const addr = votingAddress(v);
         const st = votingStatus(v);
+        const endMs = endsAtMs(v);
+        const endLabel = endMs ? formatDateTime(endMs) : "";
         return (
           <article key={addr || v.title} className="card" data-testid="voting-card">
             <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
@@ -61,6 +64,13 @@ export function Referendums() {
                     ? tt("votingAwaitFinalize")
                     : tt("votingOpen")}
             </span>
+            {endLabel ? (
+              <p className="muted" style={{ margin: "8px 0 0" }}>
+                {st === "finished" || st === "awaiting_finalize"
+                  ? tt("endedAt", { when: endLabel })
+                  : tt("endsAt", { when: endLabel })}
+              </p>
+            ) : null}
             <h3 style={{ margin: "10px 0 8px" }}>{v.title || addr}</h3>
             {v.description ? <p className="muted">{v.description}</p> : null}
             <Link className="btn btn-primary" to={`/referendums/${encodeURIComponent(addr)}`}>

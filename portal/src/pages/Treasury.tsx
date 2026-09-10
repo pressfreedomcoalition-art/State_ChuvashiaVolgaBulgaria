@@ -281,7 +281,7 @@ export function Treasury() {
             <>
               <p className="muted">Автоконверт жетона ДАО → TON, когда баланс TON ниже порога.</p>
               <Link className="btn btn-primary" to={createHref(18, { minTon: "1", title: "Включить автоконверт" })}>
-                Включить (голос vtype 18)
+                Включить автоконверт
               </Link>
             </>
           ) : (
@@ -316,7 +316,7 @@ export function Treasury() {
                   title: "Буфер конверта",
                 })}
               >
-                Пополнить буфер (vtype 20)
+                Пополнить буфер
               </Link>
             </>
           )}
@@ -367,7 +367,7 @@ export function Treasury() {
               className="btn btn-primary"
               to={createHref(30, { module: dexAddr, title: "Приклеить DexLP" })}
             >
-              Приклеить (vtype 30)
+              Приклеить DexLP
             </Link>
           ) : null}
           {dexAddr && dexAllowed ? (
@@ -375,7 +375,7 @@ export function Treasury() {
               className="btn btn-primary"
               to={createHref(31, { module: dexAddr, exec: "returnTon", title: "Исполнить на DexLP" })}
             >
-              Исполнить (vtype 31)
+              Исполнить на DexLP
             </Link>
           ) : null}
           {dexAddr && dexAllowed ? (
@@ -400,7 +400,7 @@ export function Treasury() {
 
       {sub === "trc20" && (
         <div className="card stack">
-          <p className="muted">Мультивалютная казна: USDT TRC-20 через ChainWallet и голос vtype 32.</p>
+          <p className="muted">Мультивалютная казна: выплаты USDT TRC-20.</p>
           {chainAddr ? (
             <p>
               ChainWallet: <code style={{ wordBreak: "break-all" }}>{shortAddr(chainAddr, 10, 8)}</code>
@@ -418,7 +418,7 @@ export function Treasury() {
               className="btn btn-primary"
               to={createHref(30, { module: chainAddr, title: "Приклеить ChainWallet" })}
             >
-              Приклеить (vtype 30)
+              Приклеить ChainWallet
             </Link>
           ) : null}
           {chainAddr && chainAllowed ? (
@@ -426,7 +426,7 @@ export function Treasury() {
               className="btn btn-primary"
               to={createHref(32, { module: chainAddr, title: "Выплата USDT TRC-20" })}
             >
-              Выплатить USDT (vtype 32)
+              Выплатить USDT
             </Link>
           ) : (
             <p className="muted">Сначала приклейте модуль, затем доступна выплата.</p>
