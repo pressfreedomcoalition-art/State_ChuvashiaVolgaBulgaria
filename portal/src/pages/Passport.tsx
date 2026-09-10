@@ -161,6 +161,7 @@ export function Passport() {
             session: unlocked ? tt("sessionOn") : tt("sessionOff"),
           })}
         </p>
+        <p className="muted">{tt("gasExplain")}</p>
         {health?.gas ? (
           <p className="muted">
             {tt("gasTariffs", {
