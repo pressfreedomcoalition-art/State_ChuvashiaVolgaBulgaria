@@ -120,6 +120,53 @@ export async function installTestnetMocks(page: Page) {
       await route.fulfill({ json: { ok: true, feeFloorUsdt: 1.62, defaultFeeSymbol: "USDT" } });
       return;
     }
+    if (path.includes("/v1/platform/voting-catalog")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          version: 1,
+          categories: [
+            { id: "decisions", title: "Решения" },
+            { id: "treasury", title: "Казна" },
+            { id: "funds", title: "Фонды" },
+          ],
+          items: [
+            {
+              id: "decision",
+              vtype: 0,
+              category: "decisions",
+              label: "Референдум / решение",
+              hint: "opinion",
+            },
+            {
+              id: "payout",
+              vtype: 1,
+              category: "treasury",
+              label: "Выплата из казны",
+              hint: "kind=1",
+            },
+            {
+              id: "priv-enable",
+              vtype: 11,
+              category: "funds",
+              label: "Приватизация — включить",
+              hint: "hub.on.priv_fund",
+              require: { privFundOn: false },
+              preset: { hubAppMode: "enable", hubAppId: "priv_fund" },
+            },
+            {
+              id: "topup-create",
+              vtype: 14,
+              category: "funds",
+              label: "Автопополнение казны",
+              hint: "fund.topup",
+              require: { topupActive: false },
+            },
+          ],
+        },
+      });
+      return;
+    }
 
     // cache peek / list / refresh
     if (path.includes("/v1/cache/")) {

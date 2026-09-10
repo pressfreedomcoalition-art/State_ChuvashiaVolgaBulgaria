@@ -252,6 +252,7 @@ Content-Type: application/json
 | POST | `/v1/cache/list` | прогрев снимка (см. §5.1) |
 | GET | `/v1/citizenship/count?dao=` | **число** граждан, без списка и личностей |
 | GET | `/v1/platform/kyc-tariff` | тариф docs-KYC |
+| GET | `/v1/platform/voting-catalog` | каталог типов голосования (модули create) для кабинетов |
 | POST | `/v1/partner/elig/begin` | сессия «разрешить сайту узнать да/нет» |
 | GET | `/v1/partner/elig/session/:id` | мета сессии (без PII) |
 | GET | `/v1/partner/elig/consume?code=` | один раз забрать результат |

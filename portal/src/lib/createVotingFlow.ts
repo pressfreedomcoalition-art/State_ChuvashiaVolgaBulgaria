@@ -46,9 +46,12 @@ export type CreateVtype =
   | 2
   | 4
   | 6
+  | 7
   | 10
+  | 11
   | 12
   | 13
+  | 14
   | 16
   | 17
   | 18
@@ -64,6 +67,8 @@ const ATTACH_TON = "0.1";
 const ADD_OPT_TON = "0.05";
 const START_TON = "0.08";
 const FINALIZE_TON = "0.15";
+const APP_TOMBSTONE = "-";
+const HUB_ON_PREFIX = "hub.on.";
 
 export type CreateForm = {
   title: string;
@@ -104,6 +109,14 @@ export type CreateForm = {
   chainDest: string;
   chainAmount: string;
   chainNonce: string;
+  /** unlock privatization (7) */
+  citizenCount: string;
+  /** treasury top-up (14) */
+  topupMode: "pct" | "fixed";
+  topupAmount: string;
+  /** hub app enable/disable (11) */
+  hubAppMode: "" | "enable" | "disable";
+  hubAppId: string;
 };
 
 export function defaultCreateForm(floors: VoteSettingsFloors): CreateForm {
@@ -137,6 +150,11 @@ export function defaultCreateForm(floors: VoteSettingsFloors): CreateForm {
     chainDest: "",
     chainAmount: "1",
     chainNonce: String(Date.now()),
+    citizenCount: "",
+    topupMode: "pct",
+    topupAmount: "1",
+    hubAppMode: "",
+    hubAppId: "",
   };
 }
 
@@ -199,6 +217,70 @@ async function buildAction(
     return {
       kind: 4,
       param: { key: "fund.convert.ton.min", isString: false, num: nano },
+      approveIndex: 0,
+    };
+  }
+
+  if (vtype === 7) {
+    const n = Math.trunc(Number(form.citizenCount) || 0);
+    if (!(n > 0)) throw new Error("Укажите число граждан (> 0)");
+    return {
+      kind: 6,
+      param: { key: "totalCitizens", isString: false, num: n },
+      approveIndex: 0,
+    };
+  }
+
+  if (vtype === 11) {
+    const mode = form.hubAppMode;
+    const hubId = form.hubAppId.trim() || "priv_fund";
+    if (mode === "enable" || mode === "disable") {
+      return {
+        kind: 4,
+        param: {
+          key: `${HUB_ON_PREFIX}${hubId}`,
+          isString: true,
+          str: mode === "enable" ? "1" : APP_TOMBSTONE,
+        },
+        approveIndex: 0,
+      };
+    }
+    const key = form.paramKey.trim();
+    if (!key) throw new Error("Укажите ключ hub.on.* или app.*");
+    return {
+      kind: 4,
+      param: {
+        key,
+        isString: form.paramIsString,
+        num: form.paramIsString ? 0 : Number(form.paramNum) || 0,
+        str: form.paramStr,
+      },
+      approveIndex: 0,
+    };
+  }
+
+  if (vtype === 14) {
+    const raw = Number(String(form.topupAmount).replace(",", "."));
+    if (!Number.isFinite(raw) || raw <= 0) throw new Error("Укажите сумму / процент автопополнения");
+    if (form.topupMode === "pct") {
+      return {
+        kind: 4,
+        param: {
+          key: "fund.topup.pct",
+          isString: false,
+          num: Math.max(1, Math.min(10000, Math.round(raw * 100))),
+        },
+        approveIndex: 0,
+      };
+    }
+    const decimals = Math.floor(Number(form.payoutDecimals) || 9);
+    return {
+      kind: 4,
+      param: {
+        key: "fund.topup.fixed",
+        isString: false,
+        num: toJettonUnits(raw, decimals),
+      },
       approveIndex: 0,
     };
   }

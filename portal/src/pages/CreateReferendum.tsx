@@ -12,99 +12,125 @@ import { voteSettingsFloorsFromConfig } from "../ton/voteFloors";
 import type { ModExecKind } from "../lib/treasuryOps";
 import { resolveWallet } from "../lib/e2eHooks";
 import { ActionError } from "../components/TonConnectRecovery";
-
-type Cat = "decisions" | "citizenship" | "treasury" | "settings" | "hub" | "parties";
-
-const CATS: { id: Cat; title: string; items: { v: CreateVtype; label: string; hint: string }[] }[] = [
-  {
-    id: "decisions",
-    title: "Решения",
-    items: [{ v: 0, label: "Референдум / решение", hint: "Только мнение граждан — без исполнения из казны" }],
-  },
-  {
-    id: "citizenship",
-    title: "Гражданство",
-    items: [
-      { v: 6, label: "Путь гражданства", hint: "Включить или настроить способ получения гражданства" },
-      { v: 12, label: "Включить бан по голосу", hint: "Разрешить исключение гражданина голосованием" },
-      { v: 13, label: "Бан гражданина", hint: "Исключить конкретного гражданина" },
-      { v: 19, label: "Открыть NFT-паспорт", hint: "Разрешить выпуск NFT-паспорта" },
-      { v: 16, label: "Пароль доступа", hint: "Настройка пароля / защиты" },
-      { v: 17, label: "Газ из казны", hint: "Оплата газа голосований из казны" },
-    ],
-  },
-  {
-    id: "treasury",
-    title: "Казна",
-    items: [
-      { v: 1, label: "Выплата из казны", hint: "За / Против — выплата после принятия" },
-      { v: 18, label: "Автоконверт (порог TON)", hint: "Когда конвертировать жетон в TON" },
-      { v: 20, label: "Буфер конверта", hint: "Пополнить операционный буфер" },
-      { v: 30, label: "Приклеить / отклеить модуль", hint: "Подключить или отключить модуль казны" },
-      { v: 31, label: "Исполнить на модуле", hint: "Действие на подключённом модуле" },
-      { v: 32, label: "Выплата USDT TRC-20", hint: "Выплата в USDT через мультивалютный модуль" },
-    ],
-  },
-  {
-    id: "settings",
-    title: "Настройки",
-    items: [
-      { v: 2, label: "Правила голосований", hint: "Кворум, поддержка, длительность, логотип" },
-      { v: 4, label: "Параметр ДАО", hint: "Изменить произвольный параметр" },
-    ],
-  },
-  {
-    id: "hub",
-    title: "Хаб",
-    items: [{ v: 10, label: "Короткий URL", hint: "Короткая ссылка на ДАО" }],
-  },
-  {
-    id: "parties",
-    title: "Партии",
-    items: [
-      { v: 21, label: "Разрешить партии", hint: "Включить создание партий" },
-      { v: 22, label: "Разрешить вступление", hint: "Включить вступление в партии" },
-    ],
-  },
-];
-
-const TREASURY_VTYPES = new Set<CreateVtype>([1, 18, 20, 30, 31, 32]);
-
-function parseVtype(raw: string | null): CreateVtype | null {
-  if (!raw) return null;
-  const n = Number(raw) as CreateVtype;
-  const all = CATS.flatMap((c) => c.items.map((i) => i.v));
-  return all.includes(n) ? n : null;
-}
+import { DAO_ADDRESS } from "../lib/config";
+import {
+  catalogContextFromParams,
+  filterVotingCatalog,
+  loadVotingCatalog,
+  type VoteCatId,
+  type VotingCatalog,
+  type VotingCatalogItem,
+} from "../lib/votingCatalog";
+import { fetchPrivatizationStatus } from "../ton/rpc";
 
 export function CreateReferendum() {
-  const { config, tt, isCitizen } = useApp();
+  const { config, tt, isCitizen, params, citizens } = useApp();
   const wallet = resolveWallet(useTonAddress());
   const [ui] = useTonConnectUI();
   const nav = useNavigate();
   const [q] = useSearchParams();
   const floors = useMemo(() => voteSettingsFloorsFromConfig(config), [config]);
-  const presetV = parseVtype(q.get("vtype"));
-  const [cat, setCat] = useState<Cat>(() =>
-    presetV != null && TREASURY_VTYPES.has(presetV) ? "treasury" : "decisions",
-  );
-  const [vtype, setVtype] = useState<CreateVtype | null>(() => presetV);
-  const [form, setForm] = useState<CreateForm>(() => {
-    const base = defaultCreateForm(floors);
-    return applyQueryPreset(base, q, presetV);
+
+  const [catalog, setCatalog] = useState<VotingCatalog | null>(null);
+  const [catalogSource, setCatalogSource] = useState<"api" | "bundle">("bundle");
+  const [privFund, setPrivFund] = useState<{ fund: string | null; live: boolean }>({
+    fund: null,
+    live: false,
   });
+  const [cat, setCat] = useState<VoteCatId>("decisions");
+  const [picked, setPicked] = useState<VotingCatalogItem | null>(null);
+  const [form, setForm] = useState<CreateForm>(() => defaultCreateForm(floors));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
   const retryRef = useRef<null | (() => void)>(null);
+  const queryApplied = useRef(false);
 
   useEffect(() => {
-    if (presetV == null) return;
-    setVtype(presetV);
-    if (TREASURY_VTYPES.has(presetV)) setCat("treasury");
-    setForm((f) => applyQueryPreset({ ...defaultCreateForm(floors), ...f }, q, presetV));
+    let cancelled = false;
+    void (async () => {
+      const [{ catalog: catRaw, source }, priv] = await Promise.all([
+        loadVotingCatalog(),
+        fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
+      ]);
+      if (cancelled) return;
+      setCatalog(catRaw);
+      setCatalogSource(source);
+      setPrivFund(priv);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const ctx = useMemo(
+    () =>
+      catalogContextFromParams(params, {
+        hasPrivFund: !!privFund.fund,
+        privFundLive: privFund.live,
+      }),
+    [params, privFund.fund, privFund.live],
+  );
+
+  const filtered = useMemo(() => {
+    if (!catalog) return { categories: [], items: [] as VotingCatalogItem[] };
+    return filterVotingCatalog(catalog, ctx);
+  }, [catalog, ctx]);
+
+  const groupItems = useMemo(
+    () => filtered.items.filter((i) => i.category === cat),
+    [filtered.items, cat],
+  );
+
+  const vtype = (picked?.vtype ?? null) as CreateVtype | null;
+
+  useEffect(() => {
+    if (!catalog || queryApplied.current) return;
+    const rawV = q.get("vtype");
+    if (!rawV) return;
+    const n = Number(rawV);
+    if (!Number.isFinite(n)) return;
+    const hubMode = q.get("hubAppMode") || q.get("appMode");
+    const hubId = q.get("hubAppId") || "";
+    const itemId = q.get("item");
+    const all = catalog.items;
+    let match =
+      (itemId ? all.find((i) => i.id === itemId) : undefined) ||
+      all.find((i) => {
+        if (i.vtype !== n) return false;
+        if (hubMode && i.preset?.hubAppMode && i.preset.hubAppMode !== hubMode) return false;
+        if (hubId && i.preset?.hubAppId && i.preset.hubAppId !== hubId) return false;
+        return true;
+      }) ||
+      all.find((i) => i.vtype === n);
+    if (!match) return;
+    queryApplied.current = true;
+    setCat(match.category);
+    applyPick(match, citizens);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetV]);
+  }, [catalog, q, citizens]);
+
+  function applyPick(item: VotingCatalogItem, citizenCountHint?: number | null) {
+    setPicked(item);
+    const next = applyQueryPreset(
+      {
+        ...defaultCreateForm(floors),
+        citizenCount:
+          citizenCountHint && citizenCountHint > 0 ? String(citizenCountHint) : "",
+      },
+      q,
+      item.vtype as CreateVtype,
+    );
+    if (item.preset?.hubAppMode) next.hubAppMode = item.preset.hubAppMode;
+    if (item.preset?.hubAppId) next.hubAppId = item.preset.hubAppId;
+    if (item.preset?.paramKey) next.paramKey = item.preset.paramKey;
+    if (item.preset?.title && !next.title) next.title = item.preset.title;
+    if (item.vtype === 7 && !next.title) next.title = "Разблокировать приватизацию";
+    if (item.vtype === 14 && !next.title) next.title = "Автопополнение казны";
+    if (item.id === "priv-enable" && !next.title) next.title = "Включить приватизацию";
+    if (item.id === "priv-disable" && !next.title) next.title = "Выключить приватизацию";
+    setForm(next);
+  }
 
   function patch<K extends keyof CreateForm>(key: K, value: CreateForm[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -133,8 +159,6 @@ export function CreateReferendum() {
     }
   }
 
-  const group = CATS.find((c) => c.id === cat)!;
-
   return (
     <div className="stack">
       <Link to="/referendums" className="muted">
@@ -144,11 +168,16 @@ export function CreateReferendum() {
       {isCitizen !== true ? (
         <p className="muted">Создавать голосования могут граждане с разблокированным паспортом и кошельком.</p>
       ) : null}
+      {catalog && catalogSource === "bundle" ? (
+        <p className="muted" style={{ fontSize: 12 }}>
+          Каталог модулей: локальный снимок (API недоступен). После обновления civic API кабинет подтянет новые типы сам.
+        </p>
+      ) : null}
 
-      {vtype == null ? (
+      {picked == null ? (
         <>
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-            {CATS.map((c) => (
+            {filtered.categories.map((c) => (
               <button
                 key={c.id}
                 type="button"
@@ -160,17 +189,15 @@ export function CreateReferendum() {
             ))}
           </div>
           <div className="stack">
-            {group.items.map((it) => (
+            {groupItems.map((it) => (
               <button
-                key={it.v}
+                key={it.id}
                 type="button"
                 className="card"
-                data-testid={`create-vtype-${it.v}`}
+                data-testid={`create-vtype-${it.vtype}`}
+                data-catalog-id={it.id}
                 style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--line)" }}
-                onClick={() => {
-                  setVtype(it.v);
-                  setForm(defaultCreateForm(floors));
-                }}
+                onClick={() => applyPick(it, citizens)}
               >
                 <strong>{it.label}</strong>
                 <p className="muted" style={{ margin: "6px 0 0" }}>
@@ -178,13 +205,20 @@ export function CreateReferendum() {
                 </p>
               </button>
             ))}
+            {!catalog ? <p className="muted">{tt("loading")}</p> : null}
+            {catalog && !groupItems.length ? (
+              <p className="muted">В этой категории сейчас нет доступных модулей.</p>
+            ) : null}
           </div>
         </>
       ) : (
         <div className="card stack">
-          <button type="button" className="btn btn-ghost" onClick={() => setVtype(null)}>
+          <button type="button" className="btn btn-ghost" onClick={() => setPicked(null)}>
             ← Тип голосования
           </button>
+          <p className="muted" style={{ margin: 0 }}>
+            {picked.label}
+          </p>
           <label className="muted">
             Заголовок
             <input
@@ -281,12 +315,12 @@ export function CreateReferendum() {
                 />
               </label>
               <label className="muted">
-                Кошелёк жетона казны (EQ…)
+                Jetton wallet казны (EQ…)
                 <input
                   value={form.payoutWallet}
                   onChange={(e) => patch("payoutWallet", e.target.value)}
                   style={inputStyle}
-                  placeholder="оставьте пустым — возьмём из ДАО"
+                  placeholder="пусто = voteJettonWallet контейнера"
                 />
               </label>
               <label className="muted">
@@ -303,7 +337,7 @@ export function CreateReferendum() {
               </label>
               <p className="muted">
                 {vtype === 20
-                  ? "Пополнение операционного буфера конверта."
+                  ? "Буфер конверта: жетон на hot-wallet ops."
                   : "Опции За/Против добавятся автоматически; «За» исполнит выплату."}
               </p>
             </>
@@ -318,6 +352,94 @@ export function CreateReferendum() {
                 style={inputStyle}
               />
             </label>
+          ) : null}
+
+          {vtype === 7 ? (
+            <>
+              <label className="muted">
+                Число граждан (снимок)
+                <input
+                  value={form.citizenCount}
+                  onChange={(e) => patch("citizenCount", e.target.value)}
+                  style={inputStyle}
+                  inputMode="numeric"
+                />
+              </label>
+              <p className="muted">
+                Kind=6 unlock: фиксирует totalCitizens на момент исполнения голоса.
+                {citizens != null ? ` Сейчас в реестре: ${citizens}.` : ""}
+              </p>
+            </>
+          ) : null}
+
+          {vtype === 14 ? (
+            <>
+              <label className="muted">
+                Режим
+                <select
+                  value={form.topupMode}
+                  onChange={(e) => patch("topupMode", e.target.value as "pct" | "fixed")}
+                  style={inputStyle}
+                >
+                  <option value="pct">Процент от казны</option>
+                  <option value="fixed">Фиксированная сумма жетона</option>
+                </select>
+              </label>
+              <label className="muted">
+                {form.topupMode === "pct" ? "Процент (напр. 1 = 1%)" : "Сумма жетона"}
+                <input
+                  value={form.topupAmount}
+                  onChange={(e) => patch("topupAmount", e.target.value)}
+                  style={inputStyle}
+                />
+              </label>
+              {form.topupMode === "fixed" ? (
+                <label className="muted">
+                  Decimals жетона
+                  <input
+                    value={form.payoutDecimals}
+                    onChange={(e) => patch("payoutDecimals", e.target.value)}
+                    style={inputStyle}
+                  />
+                </label>
+              ) : null}
+              <p className="muted">Период по умолчанию — 30 дней (fund.topup.period можно сменить отдельно).</p>
+            </>
+          ) : null}
+
+          {vtype === 11 && (form.hubAppMode === "enable" || form.hubAppMode === "disable") ? (
+            <p className="muted">
+              {form.hubAppMode === "enable" ? "Включить" : "Выключить"} модуль{" "}
+              <code>hub.on.{form.hubAppId || "priv_fund"}</code>
+            </p>
+          ) : null}
+
+          {vtype === 11 && !form.hubAppMode ? (
+            <>
+              <label className="muted">
+                Ключ DaoParam
+                <input value={form.paramKey} onChange={(e) => patch("paramKey", e.target.value)} style={inputStyle} />
+              </label>
+              <label className="muted row" style={{ gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={form.paramIsString}
+                  onChange={(e) => patch("paramIsString", e.target.checked)}
+                />
+                Строковое значение
+              </label>
+              {form.paramIsString ? (
+                <label className="muted">
+                  str
+                  <input value={form.paramStr} onChange={(e) => patch("paramStr", e.target.value)} style={inputStyle} />
+                </label>
+              ) : (
+                <label className="muted">
+                  num
+                  <input value={form.paramNum} onChange={(e) => patch("paramNum", e.target.value)} style={inputStyle} />
+                </label>
+              )}
+            </>
           ) : null}
 
           {vtype === 30 ? (
@@ -336,7 +458,7 @@ export function CreateReferendum() {
                   checked={form.modDeny}
                   onChange={(e) => patch("modDeny", e.target.checked)}
                 />
-                Отклеить модуль
+                Отклеить (mod.deny)
               </label>
             </>
           ) : null}
@@ -476,7 +598,7 @@ export function CreateReferendum() {
           {vtype === 4 || vtype === 6 || vtype === 13 ? (
             <>
               <label className="muted">
-                Ключ параметра
+                Ключ DaoParam
                 <input value={form.paramKey} onChange={(e) => patch("paramKey", e.target.value)} style={inputStyle} />
               </label>
               <label className="muted row" style={{ gap: 8, alignItems: "center" }}>
@@ -509,7 +631,7 @@ export function CreateReferendum() {
           ) : null}
 
           {vtype !== 0 ? (
-            <p className="muted">Исполняемое голосование: опции «За» / «Против» заданы заранее.</p>
+            <p className="muted">Исполняемое голосование: опции «За» / «Против» фиксированы контрактом.</p>
           ) : null}
 
           <button
@@ -556,6 +678,9 @@ function applyQueryPreset(
   const nonce = q.get("nonce");
   const deny = q.get("deny");
   const exec = q.get("exec") as ModExecKind | null;
+  const citizens = q.get("citizens") || q.get("citizenCount");
+  const topupMode = q.get("topupMode");
+  const topupAmount = q.get("topupAmount") || q.get("topup");
 
   if (title) next.title = title;
   const description = q.get("description") || q.get("desc");
@@ -583,6 +708,9 @@ function applyQueryPreset(
   if (nonce) next.chainNonce = nonce;
   if (deny === "1" || deny === "true") next.modDeny = true;
   if (exec) next.modExec = exec;
+  if (citizens) next.citizenCount = citizens;
+  if (topupMode === "pct" || topupMode === "fixed") next.topupMode = topupMode;
+  if (topupAmount) next.topupAmount = topupAmount;
   if (master && !next.title) next.description = `master ${master}`;
 
   if (vtype === 18 && !next.title) next.title = "Автоконверт казны";
@@ -591,6 +719,8 @@ function applyQueryPreset(
   if (vtype === 30 && !next.title) next.title = next.modDeny ? "Отклеить модуль казны" : "Приклеить модуль казны";
   if (vtype === 31 && !next.title) next.title = "Исполнить на модуле казны";
   if (vtype === 32 && !next.title) next.title = "Выплата USDT TRC-20";
+  if (vtype === 7 && !next.title) next.title = "Разблокировать приватизацию";
+  if (vtype === 14 && !next.title) next.title = "Автопополнение казны";
 
   return next;
 }

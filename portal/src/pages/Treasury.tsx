@@ -20,10 +20,11 @@ import {
   type ConvertStatus,
   type TreasuryTxRow,
 } from "../lib/treasuryOps";
-import { fetchDaoCreator } from "../ton/rpc";
+import { isPrivFundEnabled, isTopupActive } from "../lib/votingCatalog";
+import { fetchDaoCreator, fetchPrivatizationStatus } from "../ton/rpc";
 import { ActionError, isTonConnectFail } from "../components/TonConnectRecovery";
 
-type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr";
+type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr" | "funds";
 
 const SUB_TITLE: Record<Exclude<Sub, "hub">, string> = {
   convert: "Конверт",
@@ -33,6 +34,7 @@ const SUB_TITLE: Record<Exclude<Sub, "hub">, string> = {
   eth: "ETH",
   btc: "BTC",
   xmr: "XMR",
+  funds: "Фонды",
 };
 
 function createHref(vtype: number, extra: Record<string, string | undefined> = {}) {
@@ -57,6 +59,10 @@ export function Treasury() {
   const deployRetryRef = useRef<null | (() => void)>(null);
   /** DexLP guardian = DAO creator (same as dao.blc.cab), not the visitor wallet. */
   const [guardian, setGuardian] = useState("");
+  const [privStatus, setPrivStatus] = useState<{ fund: string | null; live: boolean }>({
+    fund: null,
+    live: false,
+  });
 
   const tonNano = Number(treasury?.ton ?? treasury?.governance ?? NaN);
   const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : null;
@@ -66,6 +72,8 @@ export function Treasury() {
   const convertParam = params.get(FUND_CONVERT_TON_MIN_PARAM);
   const convertOn = isFundConvertEnabled(convertParam);
   const convertMinTon = nanoToTon(Number(convertParam?.numRaw ?? convertParam?.num ?? 0));
+  const privFundOn = isPrivFundEnabled(params);
+  const topupOn = isTopupActive(params);
 
   const chainAddr = useMemo(() => {
     try {
@@ -88,16 +96,18 @@ export function Treasury() {
   const dexAllowed = dexAddr ? isModuleAllowed(paramsList, dexAddr) : false;
 
   const loadExtra = useCallback(async () => {
-    const [st, hist, creator] = await Promise.all([
+    const [st, hist, creator, priv] = await Promise.all([
       fetchConvertStatus(DAO_ADDRESS).catch(() => null),
       sub === "txHistory" ? fetchTreasuryTxHistory(DAO_ADDRESS).catch((e) => {
         setTxErr(e instanceof Error ? e.message : String(e));
         return null;
       }) : Promise.resolve(null),
       fetchDaoCreator(DAO_ADDRESS).catch(() => null),
+      fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
     ]);
     setConvertStatus(st);
     if (creator) setGuardian(creator);
+    setPrivStatus(priv);
     if (hist) {
       setTxRows(hist);
       setTxErr("");
@@ -183,6 +193,10 @@ export function Treasury() {
       {sub === "hub" && (
         <>
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setSub("funds")}>
+              Фонды
+              {privFundOn || topupOn ? " · вкл" : ""}
+            </button>
             <button type="button" className="btn btn-ghost" onClick={() => setSub("convert")}>
               {convertOn ? `Конверт · ≥${trimNum(convertMinTon)} TON` : "Конверт · выкл"}
             </button>
@@ -273,6 +287,74 @@ export function Treasury() {
             </div>
           </div>
         </>
+      )}
+
+      {sub === "funds" && (
+        <div className="card stack">
+          <h3 style={{ margin: 0 }}>Приватизация</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            {!privFundOn
+              ? "Модуль выключен (нет hub.on.priv_fund)."
+              : privStatus.live
+                ? "Фонд разблокирован — приватизация активна."
+                : privStatus.fund
+                  ? "Модуль включён, фонд задеплоен — нужна разблокировка (vtype 7)."
+                  : "Модуль включён — дождитесь деплоя child-контракта фонда."}
+          </p>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            {!privFundOn ? (
+              <Link
+                className="btn btn-primary"
+                to={createHref(11, {
+                  item: "priv-enable",
+                  hubAppMode: "enable",
+                  hubAppId: "priv_fund",
+                  title: "Включить приватизацию",
+                })}
+              >
+                Включить приватизацию
+              </Link>
+            ) : (
+              <>
+                {privStatus.fund && !privStatus.live ? (
+                  <Link className="btn btn-primary" to={createHref(7, { item: "priv-unlock", title: "Разблокировать приватизацию" })}>
+                    Разблокировать
+                  </Link>
+                ) : null}
+                <Link
+                  className="btn btn-ghost"
+                  to={createHref(11, {
+                    item: "priv-disable",
+                    hubAppMode: "disable",
+                    hubAppId: "priv_fund",
+                    title: "Выключить приватизацию",
+                  })}
+                >
+                  Выключить
+                </Link>
+              </>
+            )}
+          </div>
+
+          <h3 style={{ margin: "16px 0 0" }}>Автопополнение казны</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            {topupOn
+              ? "Параметр fund.topup.* задан — автопополнение активно."
+              : "Периодическое пополнение казны (% или фикс) — как в основном DAO."}
+          </p>
+          {!topupOn ? (
+            <Link
+              className="btn btn-primary"
+              to={createHref(14, { item: "topup-create", title: "Автопополнение казны", topupMode: "pct", topupAmount: "1" })}
+            >
+              Включить автопополнение
+            </Link>
+          ) : (
+            <Link className="btn btn-ghost" to={createHref(14, { item: "topup-create", title: "Изменить автопополнение" })}>
+              Изменить параметры
+            </Link>
+          )}
+        </div>
       )}
 
       {sub === "convert" && (
