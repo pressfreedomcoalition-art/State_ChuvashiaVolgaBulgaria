@@ -95,8 +95,38 @@ export function isBanByVoteEnabled(params: Map<string, DaoParam> | DaoParam[]): 
 
 export function isNftPassportOpen(params: Map<string, DaoParam> | DaoParam[]): boolean {
   const p = Array.isArray(params)
-    ? params.find((x) => x.key === "nft.passport.open")
-    : params.get("nft.passport.open");
+    ? params.find((x) => x.key === "cit.nft.collection")
+    : params.get("cit.nft.collection");
+  if (!p) return false;
+  const str = (p.str || "").trim();
+  if (!str || str === "-" || str === "0") return false;
+  return str.length > 10;
+}
+
+/** Collection address when NFT passports are open. */
+export function nftPassportCollection(params: Map<string, DaoParam> | DaoParam[]): string | null {
+  const p = Array.isArray(params)
+    ? params.find((x) => x.key === "cit.nft.collection")
+    : params.get("cit.nft.collection");
+  if (!p) return null;
+  const str = (p.str || "").trim();
+  if (!str || str === "-" || str.length < 10) return null;
+  return str;
+}
+
+export function isGasTreasuryEnabled(params: Map<string, DaoParam> | DaoParam[]): boolean {
+  const p = Array.isArray(params)
+    ? params.find((x) => x.key === "gas.treasury")
+    : params.get("gas.treasury");
+  if (!p) return false;
+  if (p.isString) return (p.str || "").trim() === "1";
+  return (p.num ?? 0) !== 0;
+}
+
+export function isPartyAllowEnabled(params: Map<string, DaoParam> | DaoParam[]): boolean {
+  const p = Array.isArray(params)
+    ? params.find((x) => x.key === "party.allow")
+    : params.get("party.allow");
   if (!p) return false;
   if (p.isString) return (p.str || "").trim() === "1";
   return (p.num ?? 0) !== 0;
@@ -150,7 +180,7 @@ export const BUNDLED_VOTING_CATALOG: VotingCatalog = {
       vtype: 19,
       category: "citizenship",
       label: "Открыть NFT-паспорт",
-      hint: "nft.passport.open",
+      hint: "cit.nft.collection = EQ…",
       require: { nftPassOpen: false },
     },
     {

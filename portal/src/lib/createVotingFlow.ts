@@ -422,12 +422,15 @@ async function buildAction(
     13: { key: form.paramKey.trim() || "cit.ban.manual", isString: true, str: form.paramStr.trim() },
     16: { key: "sec.password", isString: true, str: form.paramStr.trim() || "1" },
     17: { key: "gas.treasury", isString: true, str: "1" },
-    19: { key: "nft.passport.open", isString: true, str: "1" },
+    19: { key: "cit.nft.collection", isString: true, str: form.paramStr.trim() },
     21: { key: "party.allow", isString: true, str: "1" },
     22: { key: "party.become", isString: true, str: "1" },
   };
   const p = keyMap[vtype];
   if (!p?.key) throw new Error("Неизвестный тип голосования");
+  if (vtype === 19 && !(p.str || "").trim()) {
+    throw new Error("Укажите адрес NFT-коллекции (cit.nft.collection)");
+  }
   return {
     kind: 4,
     param: {

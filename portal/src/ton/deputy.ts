@@ -2,7 +2,11 @@ import { Address, beginCell, Cell, contractAddress, storeStateInit, toNano } fro
 import { DEPUTY_CODE_B64 } from "./deputyCode.generated";
 
 export const OP_UPDATE_DEPUTY = 0x5ade0001;
+export const OP_RESIGN_PROFILE = 0x5ade0002;
 export const PROFILE_KIND_CITIZEN = 0;
+export const PROFILE_KIND_PARTY = 1;
+
+const OP_CIVIC_CAST = 0x5adc0002;
 
 export type DeputyProfile = {
   address: string;
@@ -83,6 +87,109 @@ export function buildUpdateDeputyProfileBody(p: {
     .storeStringRefTail(p.fullName || "")
     .storeRef(bioCell(p.bio || ""))
     .endCell();
+}
+
+export function buildResignProfileBody(queryId = 0n): Cell {
+  return beginCell().storeUint(OP_RESIGN_PROFILE, 32).storeUint(queryId, 64).endCell();
+}
+
+export function buildResignProfileTx(profileAddr: string, ton = "0.05") {
+  return {
+    validUntil: Math.floor(Date.now() / 1000) + 300,
+    messages: [
+      {
+        address: Address.parse(profileAddr).toString({ bounceable: true }),
+        amount: toNano(ton).toString(),
+        payload: buildResignProfileBody().toBoc().toString("base64"),
+      },
+    ],
+  };
+}
+
+export type DeputyVoteRecord = {
+  voting: string;
+  optionAddress?: string;
+  votingTitle?: string;
+  optionTitle?: string;
+  at: number;
+  title?: string;
+};
+
+/** Best-effort: CivicCast txs from deputy owner wallet via tonapi. */
+export async function fetchDeputyVoteHistory(
+  owner: string,
+  knownVotings?: Array<{ id: string; title?: string; options?: Array<{ address?: string; title?: string; text?: string }> }>,
+): Promise<DeputyVoteRecord[]> {
+  try {
+    const raw = Address.parse(owner).toRawString();
+    const res = await fetch(
+      `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(raw)}/transactions?limit=100`,
+      { credentials: "omit" },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      transactions?: Array<{
+        utime?: number;
+        out_msgs?: Array<{ raw_body?: string; decoded_op_name?: string }>;
+      }>;
+    };
+    const records: DeputyVoteRecord[] = [];
+    for (const tx of data.transactions || []) {
+      for (const m of tx.out_msgs || []) {
+        if (!m.raw_body) continue;
+        let op = 0;
+        try {
+          op = Cell.fromBase64(m.raw_body).beginParse().loadUint(32);
+        } catch {
+          continue;
+        }
+        if (op !== OP_CIVIC_CAST && m.decoded_op_name !== "CivicCast") continue;
+        try {
+          const s = Cell.fromBase64(m.raw_body).beginParse();
+          s.loadUint(32);
+          s.loadUint(64);
+          const voting = s.loadAddress()!.toString({ bounceable: true });
+          const optionAddress = s.loadAddress()!.toString({ bounceable: true });
+          let votingTitle: string | undefined;
+          let optionTitle: string | undefined;
+          if (knownVotings) {
+            const v = knownVotings.find((x) => {
+              try {
+                return Address.parse(x.id).equals(Address.parse(voting));
+              } catch {
+                return false;
+              }
+            });
+            votingTitle = v?.title;
+            const opt = v?.options?.find((o) => {
+              if (!o.address) return false;
+              try {
+                return Address.parse(o.address).equals(Address.parse(optionAddress));
+              } catch {
+                return false;
+              }
+            });
+            optionTitle = opt?.title || opt?.text;
+          }
+          records.push({
+            voting,
+            optionAddress,
+            votingTitle,
+            optionTitle,
+            at: (tx.utime || 0) * 1000,
+            title: optionTitle
+              ? `${votingTitle || voting.slice(0, 10) + "…"}: ${optionTitle}`
+              : votingTitle,
+          });
+        } catch {
+          /* skip */
+        }
+      }
+    }
+    return records;
+  } catch {
+    return [];
+  }
 }
 
 function normCommit(h: string): string {

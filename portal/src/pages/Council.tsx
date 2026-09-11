@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { SafeHtml } from "../components/SafeHtml";
 import { bioToPlain } from "../ton/safeHtml";
 import {
+  clearTargetDelegations,
   fetchDelegationStatus,
   normalizePassportCommit,
   revokeVoteDelegation,
@@ -12,17 +14,26 @@ import {
 } from "../lib/civicActions";
 import { hasLocalVault } from "../lib/passport";
 import type { DeputyCard } from "../lib/civic";
+import { buildResignProfileTx, fetchDeputyVoteHistory, type DeputyVoteRecord } from "../ton/deputy";
+import { pathEnabled } from "../lib/civic";
+import { isPartyAllowEnabled } from "../lib/votingCatalog";
+import { resolveWallet } from "../lib/e2eHooks";
 
 function deputyCommit(d: DeputyCard): string {
   return normalizePassportCommit(d.passportCommit || d.subject);
 }
 
 export function Council() {
-  const { tt, deputies } = useApp();
+  const { tt, deputies, params, votings } = useApp();
+  const wallet = resolveWallet(useTonAddress());
+  const [ui] = useTonConnectUI();
   const [del, setDel] = useState<DelegationStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [historyFor, setHistoryFor] = useState<DeputyCard | null>(null);
+  const [votes, setVotes] = useState<DeputyVoteRecord[]>([]);
+  const [votesLoading, setVotesLoading] = useState(false);
 
   const refreshDel = useCallback(async () => {
     if (!hasLocalVault()) {
@@ -44,6 +55,8 @@ export function Council() {
 
   const myCommit = normalizePassportCommit(del?.myCommit);
   const delegateTo = normalizePassportCommit(del?.delegateTo);
+  const langOn = pathEnabled(params, "lang");
+  const partiesOn = isPartyAllowEnabled(params);
 
   async function onDelegate(toCommit: string) {
     setBusy(true);
@@ -75,10 +88,103 @@ export function Council() {
     }
   }
 
+  async function openHistory(d: DeputyCard) {
+    const owner = (d as { owner?: string }).owner || wallet;
+    if (!owner && !d.address) {
+      setErr(tt("delNoHistory"));
+      return;
+    }
+    setHistoryFor(d);
+    setVotesLoading(true);
+    setVotes([]);
+    try {
+      const known = votings.map((v) => ({
+        id: v.address || v.id || v.voting || "",
+        title: v.title,
+      }));
+      // Prefer profile owner wallet for CivicCast history.
+      const src = (d as { owner?: string }).owner || d.address || owner || "";
+      const list = await fetchDeputyVoteHistory(src, known);
+      setVotes(list);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setVotesLoading(false);
+    }
+  }
+
+  async function onResign(d: DeputyCard) {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    if (!d.address) {
+      setErr(tt("delNoCommit"));
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    setErr("");
+    try {
+      const tx = buildResignProfileTx(d.address);
+      await ui.sendTransaction(tx);
+      try {
+        const cleared = await clearTargetDelegations();
+        setMsg(tt("delResignOk", { n: String(cleared.cleared ?? 0) }));
+      } catch {
+        setMsg(tt("delResignOkChain"));
+      }
+      await refreshDel();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (historyFor) {
+    const title = historyFor.name || historyFor.fullName || historyFor.address;
+    return (
+      <div className="stack">
+        <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => setHistoryFor(null)}>
+          ← {tt("council")}
+        </button>
+        <h1 className="page-title">{tt("delVoteHistory")}</h1>
+        <p className="muted">{title}</p>
+        {votesLoading ? <p className="muted">{tt("loading")}</p> : null}
+        {!votesLoading && votes.length === 0 ? <p className="muted">{tt("delNoVotes")}</p> : null}
+        {votes.map((v, i) => (
+          <article key={`${v.voting}-${i}`} className="card stack" style={{ gap: 4 }}>
+            <strong>{v.votingTitle || v.title || `${v.voting.slice(0, 12)}…`}</strong>
+            {v.optionTitle ? <p className="muted" style={{ margin: 0 }}>{tt("delVotedFor", { opt: v.optionTitle })}</p> : null}
+            {v.at > 0 ? (
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                {new Date(v.at).toLocaleString()}
+              </p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
       <h1 className="page-title">{tt("council")}</h1>
       <p className="muted">{tt("composition")}</p>
+
+      <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+        {partiesOn ? (
+          <Link className="btn btn-ghost" to="/council/parties">
+            {tt("parties")}
+          </Link>
+        ) : null}
+        {langOn ? (
+          <Link className="btn btn-ghost" to="/citizenship?path=lang">
+            {tt("langEndorseLink")}
+          </Link>
+        ) : null}
+      </div>
 
       <div className="card stack" style={{ gap: 8 }}>
         <strong>{tt("delTitle")}</strong>
@@ -151,9 +257,9 @@ export function Council() {
                   </p>
                 )
               ) : null}
-              {commit ? (
-                <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                  {isCurrent ? (
+              <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                {commit ? (
+                  isCurrent ? (
                     <button className="btn btn-ghost" disabled={busy} onClick={() => void onRevoke()}>
                       {tt("delRevoke")}
                     </button>
@@ -166,13 +272,21 @@ export function Council() {
                     >
                       {tt("delSet")}
                     </button>
-                  )}
-                </div>
-              ) : (
-                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  {tt("delNoCommit")}
-                </p>
-              )}
+                  )
+                ) : (
+                  <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                    {tt("delNoCommit")}
+                  </p>
+                )}
+                <button className="btn btn-ghost" disabled={busy} onClick={() => void openHistory(d)}>
+                  {tt("delVoteHistory")}
+                </button>
+                {isSelf && d.address ? (
+                  <button className="btn btn-ghost" disabled={busy} onClick={() => void onResign(d)}>
+                    {tt("delResign")}
+                  </button>
+                ) : null}
+              </div>
             </article>
           );
         })

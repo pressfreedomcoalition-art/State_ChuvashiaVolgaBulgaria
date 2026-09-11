@@ -35,6 +35,10 @@ function bounceableAddr(addr: string): string {
   }
 }
 
+function normCommit(h: string): string {
+  return h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
+}
+
 export async function resolveDaoModules(dao = DAO_ADDRESS) {
   const sides = await cacheGet<string[]>(`containerSides:${dao}`);
   const parsed = parseContainerSides(sides);
@@ -63,8 +67,92 @@ export async function fetchCitizenshipStatus(dao = DAO_ADDRESS) {
     status?: string;
     paths?: string[];
     commit?: string;
+    applicationPending?: boolean;
+    haveConfirmations?: number;
+    needConfirmations?: number;
+    have?: number;
+    need?: number;
+    yes?: number;
+    no?: number;
+    net?: number;
     kyc?: { status?: string; accessToken?: string; provider?: string };
   }>("/v1/citizenship/status", { presentation, dao });
+}
+
+export type LangApplication = {
+  commit: string;
+  codeWord?: string;
+  note?: string;
+  have?: number;
+  yes?: number;
+  no?: number;
+  net?: number;
+  need?: number;
+  myDecision?: string | null;
+};
+
+export async function applyCitizenshipLang(opts: { codeWord: string; note: string; initData?: string }) {
+  const mods = await resolveDaoModules();
+  if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
+  const presentation = await ensurePassportPresentation(reason("unlockReasonLangApply"));
+  return civicPost<{
+    ok: boolean;
+    commit?: string;
+    alreadyCitizen?: boolean;
+    have?: number;
+    need?: number;
+    quorum?: number;
+    codeWord?: string;
+    note?: string;
+  }>("/v1/citizenship/apply", {
+    presentation,
+    dao: DAO_ADDRESS,
+    citizenshipHub: mods.citizenshipHub,
+    codeWord: opts.codeWord,
+    note: opts.note,
+    ...(opts.initData ? { initData: opts.initData } : {}),
+  });
+}
+
+export async function listCitizenshipApplications(mode: "pending" | "archive" = "pending") {
+  const mods = await resolveDaoModules();
+  if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonLangEndorse") });
+  return civicPost<{ ok: boolean; applications?: LangApplication[]; quorum?: number }>(
+    "/v1/citizenship/applications",
+    {
+      presentation,
+      dao: DAO_ADDRESS,
+      citizenshipHub: mods.citizenshipHub,
+      mode,
+    },
+  );
+}
+
+export async function endorseCitizenshipLang(opts: {
+  applicantCommit: string;
+  decision: "yes" | "no";
+}) {
+  const mods = await resolveDaoModules();
+  if (!mods.citizenshipHub) throw new Error("citizenship_hub_missing");
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonLangEndorse") });
+  return civicPost<{
+    ok: boolean;
+    decision?: string;
+    yes?: number;
+    no?: number;
+    net?: number;
+    need?: number;
+    quorum?: number;
+    granted?: boolean;
+    applicantCommit?: string;
+  }>("/v1/citizenship/endorse", {
+    guarantorPresentation: presentation,
+    applicantCommit: normCommit(opts.applicantCommit),
+    dao: DAO_ADDRESS,
+    citizenshipHub: mods.citizenshipHub,
+    decision: opts.decision,
+  });
 }
 
 export async function castCivicVote(opts: {
@@ -109,10 +197,6 @@ export type DelegationStatus = {
   effectiveWeight?: number;
 };
 
-function normCommit(h: string): string {
-  return h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
-}
-
 export function normalizePassportCommit(h: string | undefined | null): string {
   if (!h) return "";
   return normCommit(h);
@@ -143,7 +227,16 @@ export async function revokeVoteDelegation() {
   });
 }
 
+export async function clearTargetDelegations() {
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonDelegation") });
+  return civicPost<{ ok: boolean; cleared?: number; myCommit?: string }>("/v1/delegation/clear-target", {
+    presentation,
+    dao: DAO_ADDRESS,
+  });
+}
+
 const GAS_PENDING_KEY = "chv_gas_pending_v1";
+const GAS_DAO_PENDING_KEY = "chv_gas_dao_pending_v1";
 const GAS_MIN_TON = 0.05;
 
 type GasPending = { ticket: string; memo: string; fromWallet: string; at: number };
@@ -259,6 +352,167 @@ export async function topUpPrepaidGas(opts: {
     // Index lag — leave pending for retryPendingGasClaim
     throw e;
   }
+}
+
+type DaoGasPending = GasPending & { dao: string };
+
+function saveDaoGasPending(p: DaoGasPending) {
+  try {
+    localStorage.setItem(GAS_DAO_PENDING_KEY, JSON.stringify(p));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readDaoGasPending(): DaoGasPending | null {
+  try {
+    const raw = localStorage.getItem(GAS_DAO_PENDING_KEY);
+    if (!raw) return null;
+    const j = JSON.parse(raw) as DaoGasPending;
+    if (!j?.ticket || !j?.fromWallet) return null;
+    if (Date.now() - (j.at || 0) > 48 * 3600_000) {
+      localStorage.removeItem(GAS_DAO_PENDING_KEY);
+      return null;
+    }
+    return j;
+  } catch {
+    return null;
+  }
+}
+
+function clearDaoGasPending() {
+  try {
+    localStorage.removeItem(GAS_DAO_PENDING_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function fetchDaoGasStatus() {
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonGas") });
+  return civicPost<{
+    ok: boolean;
+    enabled?: boolean;
+    balanceTon?: number;
+    fundAddress?: string;
+  }>("/v1/gas/dao/status", { presentation, dao: DAO_ADDRESS });
+}
+
+export async function issueDaoGasTicket() {
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonGasTopUp") });
+  return civicPost<{
+    ok: boolean;
+    ticket?: string;
+    memo?: string;
+    fundAddress?: string;
+    minDepositTon?: number;
+  }>("/v1/gas/dao/ticket", { presentation, dao: DAO_ADDRESS });
+}
+
+export async function claimDaoGasDeposit(opts: { ticket: string; fromWallet: string }) {
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonGasTopUp") });
+  return civicPost<{
+    ok: boolean;
+    creditedTon?: number;
+    balanceTon?: number;
+  }>("/v1/gas/dao/claim", {
+    presentation,
+    dao: DAO_ADDRESS,
+    ticket: opts.ticket,
+    fromWallet: bounceableAddr(opts.fromWallet),
+  });
+}
+
+export async function retryPendingDaoGasClaim(): Promise<{
+  ok: boolean;
+  balanceTon?: number;
+  creditedTon?: number;
+} | null> {
+  const pending = readDaoGasPending();
+  if (!pending) return null;
+  try {
+    const r = await claimDaoGasDeposit({ ticket: pending.ticket, fromWallet: pending.fromWallet });
+    clearDaoGasPending();
+    return r;
+  } catch {
+    return null;
+  }
+}
+
+export async function topUpDaoGas(opts: {
+  tonConnectUI: TonTxUi;
+  wallet: string;
+  amountTon: number;
+  fundAddressHint?: string | null;
+}) {
+  if (!Number.isFinite(opts.amountTon) || opts.amountTon < GAS_MIN_TON) {
+    throw new Error(reason("gasMinAmount"));
+  }
+  const ticket = await issueDaoGasTicket();
+  if (!ticket.ticket || !ticket.memo) throw new Error("ticket fail");
+  const dest = ticket.fundAddress || opts.fundAddressHint;
+  if (!dest) throw new Error(reason("gasNoFund"));
+
+  saveDaoGasPending({
+    ticket: ticket.ticket,
+    memo: ticket.memo,
+    fromWallet: opts.wallet,
+    at: Date.now(),
+    dao: DAO_ADDRESS,
+  });
+
+  const payload = buildTextComment(ticket.memo).toBoc().toString("base64");
+  await opts.tonConnectUI.sendTransaction({
+    validUntil: Math.floor(Date.now() / 1000) + 600,
+    messages: [
+      {
+        address: dest,
+        amount: toNano(opts.amountTon.toFixed(9)).toString(),
+        payload,
+      },
+    ],
+  });
+
+  await new Promise((r) => setTimeout(r, 6000));
+  try {
+    const claimed = await claimDaoGasDeposit({ ticket: ticket.ticket, fromWallet: opts.wallet });
+    clearDaoGasPending();
+    return claimed;
+  } catch (e) {
+    throw e;
+  }
+}
+
+export async function claimNftPassport(opts: { wallet: string; collection?: string }) {
+  const presentation = await ensurePresentation({ reason: reason("unlockReasonNftClaim") });
+  return civicPost<{
+    ok: boolean;
+    minted?: boolean;
+    already?: boolean;
+    nftAddress?: string;
+    collection?: string;
+    commit?: string;
+    code?: string;
+    error?: string;
+  }>("/v1/nft-passport/claim", {
+    presentation,
+    dao: DAO_ADDRESS,
+    wallet: bounceableAddr(opts.wallet),
+    ...(opts.collection ? { collection: bounceableAddr(opts.collection) } : {}),
+  });
+}
+
+export async function fetchNftPassportStatus(collection: string) {
+  const col = bounceableAddr(collection);
+  const res = await civicFetch(`/v1/nft-passport/status?collection=${encodeURIComponent(col)}`);
+  return (await res.json()) as {
+    ok: boolean;
+    ready?: boolean;
+    collection?: string;
+    admin?: string;
+    civicHot?: string;
+    error?: string;
+  };
 }
 
 export async function claimPrivatizationShare(opts: {

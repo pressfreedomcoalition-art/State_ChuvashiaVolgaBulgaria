@@ -3,11 +3,15 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import {
+  applyCitizenshipLang,
   claimCitizenshipDocs,
   claimCitizenshipPay,
   claimCitizenshipWallet,
+  endorseCitizenshipLang,
   fetchCitizenshipStatus,
+  listCitizenshipApplications,
   payDocsKycFee,
+  type LangApplication,
 } from "../lib/civicActions";
 import { formatJettonAmount, pathEnabled } from "../lib/civic";
 import { hasLocalVault, getSession, unlockPassport, unlockPassportSilent, issuePassport } from "../lib/passport";
@@ -29,10 +33,14 @@ export function Citizenship() {
   const [msg, setMsg] = useState("");
   const [kycOpen, setKycOpen] = useState(false);
   const retryRef = useRef<null | (() => void)>(null);
+  const [langCode, setLangCode] = useState("");
+  const [langNote, setLangNote] = useState("");
+  const [langApps, setLangApps] = useState<LangApplication[]>([]);
+  const [langPending, setLangPending] = useState<{ have: number; need: number } | null>(null);
 
   const active = (q.get("path") || "") as PathId | "";
-  /** Citizens may open docs path from «Требуют верификацию»; otherwise go to votings. */
-  const allowCitizenStay = active === "docs";
+  /** Citizens may open docs (KYC) or lang (endorse) paths; otherwise go to votings. */
+  const allowCitizenStay = active === "docs" || active === "lang";
 
   const payAmount = BigInt(params.get("cit.path.pay.amount")?.numRaw || "0");
   const payMaster =
@@ -113,6 +121,13 @@ export function Citizenship() {
       const ok = !!r.citizen;
       setCitizen(ok);
       setIsCitizen(ok);
+      if (!ok && (r.applicationPending || r.have != null || r.haveConfirmations != null)) {
+        const have = Number(r.have ?? r.haveConfirmations ?? 0);
+        const need = Number(r.need ?? r.needConfirmations ?? params.get("cit.path.lang.quorum")?.num ?? 0);
+        setLangPending({ have, need: need || 1 });
+      } else if (ok) {
+        setLangPending(null);
+      }
       if (ok && !allowCitizenStay) {
         nav("/referendums", { replace: true });
       }
@@ -274,6 +289,75 @@ export function Citizenship() {
     }
   }
 
+  async function loadLangApps() {
+    try {
+      const r = await listCitizenshipApplications("pending");
+      setLangApps(r.applications || []);
+    } catch {
+      setLangApps([]);
+    }
+  }
+
+  async function doLangApply() {
+    retryRef.current = () => void doLangApply();
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const cw = langCode.trim();
+      const nt = langNote.trim();
+      if (cw.length < 2) throw new Error(tt("langNeedCodeWord"));
+      if (nt.length < 4) throw new Error(tt("langNeedNote"));
+      await ensurePassport();
+      const initData =
+        (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp
+          ?.initData || "";
+      const j = await applyCitizenshipLang({ codeWord: cw, note: nt, initData });
+      if (j.alreadyCitizen) {
+        setCitizen(true);
+        setIsCitizen(true);
+        setMsg(tt("langAlreadyCitizen"));
+        retryRef.current = null;
+        nav("/referendums", { replace: true });
+        return;
+      }
+      const have = Number(j.have || 0);
+      const need = Number(j.need || j.quorum || params.get("cit.path.lang.quorum")?.num || 1);
+      setLangPending({ have, need });
+      setMsg(tt("langApplied"));
+      retryRef.current = null;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doEndorse(commit: string, decision: "yes" | "no") {
+    setBusy(true);
+    setErr("");
+    try {
+      const j = await endorseCitizenshipLang({ applicantCommit: commit, decision });
+      setMsg(
+        j.granted
+          ? tt("langGranted")
+          : tt("langEndorseOk", { n: String(j.net ?? j.yes ?? 0), q: String(j.need ?? j.quorum ?? "—") }),
+      );
+      await loadLangApps();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (active === "lang" && (citizen === true || isCitizen === true)) {
+      void loadLangApps();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, citizen, isCitizen]);
+
   const pathMeta = civicPaths.find((p) => p.id === active);
   const showDetail = !!active && (active === "token" || !!pathMeta);
 
@@ -427,8 +511,91 @@ export function Citizenship() {
 
       {active === "lang" ? (
         <div className="card stack">
-          <p className="muted">{tt("langPathSoon")}</p>
           <p className="muted">{tt("pathLangExplain")}</p>
+          {citizen === true || isCitizen === true ? (
+            <>
+              <p className="muted">{tt("langEndorseHint")}</p>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => void loadLangApps()}>
+                {tt("reload")}
+              </button>
+              {langApps.length === 0 ? (
+                <p className="muted">{tt("langAppsEmpty")}</p>
+              ) : (
+                langApps.map((app) => (
+                  <article key={app.commit} className="stack" style={{ gap: 6, borderTop: "1px solid var(--line, #333)", paddingTop: 8 }}>
+                    <strong>{app.codeWord || app.commit.slice(0, 10)}</strong>
+                    {app.note ? <p className="muted" style={{ margin: 0 }}>{app.note}</p> : null}
+                    <p className="muted" style={{ margin: 0 }}>
+                      {tt("langProgress", {
+                        n: String(app.net ?? app.have ?? 0),
+                        q: String(app.need ?? "—"),
+                      })}
+                      {app.myDecision ? ` · ${app.myDecision}` : ""}
+                    </p>
+                    {!app.myDecision ? (
+                      <div className="row" style={{ gap: 8 }}>
+                        <button
+                          className="btn btn-primary"
+                          disabled={busy}
+                          onClick={() => void doEndorse(app.commit, "yes")}
+                        >
+                          {tt("langYes")}
+                        </button>
+                        <button
+                          className="btn btn-ghost"
+                          disabled={busy}
+                          onClick={() => void doEndorse(app.commit, "no")}
+                        >
+                          {tt("langNo")}
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
+                ))
+              )}
+            </>
+          ) : (
+            <>
+              {langPending ? (
+                <p>
+                  {tt("langProgress", { n: String(langPending.have), q: String(langPending.need) })}
+                </p>
+              ) : null}
+              <label className="muted">
+                {tt("langCodeWord")}
+                <input
+                  className="input"
+                  style={{ width: "100%", marginTop: 4 }}
+                  value={langCode}
+                  onChange={(e) => setLangCode(e.target.value)}
+                  placeholder={tt("langCodeWordPh")}
+                  disabled={busy}
+                />
+              </label>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                {tt("langCodeWordHint")}
+              </p>
+              <label className="muted">
+                {tt("langNote")}
+                <textarea
+                  className="input"
+                  style={{ width: "100%", marginTop: 4, minHeight: 72 }}
+                  value={langNote}
+                  onChange={(e) => setLangNote(e.target.value)}
+                  placeholder={tt("langNotePh")}
+                  disabled={busy}
+                />
+              </label>
+              <button
+                className="btn btn-primary"
+                data-testid="cit-lang-apply"
+                disabled={busy}
+                onClick={() => void doLangApply()}
+              >
+                {tt("langApply")}
+              </button>
+            </>
+          )}
         </div>
       ) : null}
 

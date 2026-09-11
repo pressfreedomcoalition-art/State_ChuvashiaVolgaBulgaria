@@ -444,6 +444,21 @@ export function CreateReferendum() {
             </>
           ) : null}
 
+          {vtype === 19 ? (
+            <>
+              <label className="muted">
+                Адрес NFT-коллекции (cit.nft.collection)
+                <input
+                  value={form.paramStr}
+                  onChange={(e) => patch("paramStr", e.target.value)}
+                  placeholder="EQ…"
+                  style={inputStyle}
+                />
+              </label>
+              <p className="muted">Админ коллекции должен быть civic hot. Гражданство остаётся главным; NFT — бейдж.</p>
+            </>
+          ) : null}
+
           {vtype === 11 && (form.hubAppMode === "enable" || form.hubAppMode === "disable") ? (
             <p className="muted">
               {form.hubAppMode === "enable" ? "Включить" : "Выключить"} модуль{" "}
