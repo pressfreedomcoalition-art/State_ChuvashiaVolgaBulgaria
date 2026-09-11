@@ -141,7 +141,7 @@
 
 | # | Действие | Куда нажать | Сеть | Кеш |
 |---|----------|-------------|------|-----|
-| 9.1 | Пополнить личный газ | Газ → сумма → Пополнить | `/gas/ticket` + TON **S+W** → `/claim` | `gasPers` C |
+| 9.1 | Пополнить личный счёт комиссии | Комиссии → сумма → Пополнить | `/gas/ticket` + TON **S+W** → `/claim` | `gasPers` C |
 | 9.2 | Пул ДАО | тот же путь (DAO) | `/gas/dao/ticket` + claim | `gasDao` C |
 | 9.3 | Claim приватизации | Фонды → Claim | `/funds/claim-privatization` + TX **S+W** | `fundSnap` C |
 | 9.4 | Push liberation/topup | Push | fund opcode **W** | `fundSnap` C |
