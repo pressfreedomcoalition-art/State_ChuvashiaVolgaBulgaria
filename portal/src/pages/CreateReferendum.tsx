@@ -37,7 +37,6 @@ export function CreateReferendum() {
   const floors = useMemo(() => voteSettingsFloorsFromConfig(config), [config]);
 
   const [catalog, setCatalog] = useState<VotingCatalog | null>(null);
-  const [catalogSource, setCatalogSource] = useState<"api" | "bundle">("bundle");
   const [treasuryMods, setTreasuryMods] = useState<TreasuryModuleEntry[]>([]);
   const [privFund, setPrivFund] = useState<{ fund: string | null; live: boolean }>({
     fund: null,
@@ -55,19 +54,20 @@ export function CreateReferendum() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [{ catalog: catRaw, source }, priv, treas] = await Promise.all([
-        loadVotingCatalog(),
-        fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
-        loadTreasuryModules(DAO_ADDRESS).catch(() => ({
-          catalog: { version: 1, modules: [] as TreasuryModuleEntry[] },
-          source: "bundle" as const,
-        })),
-      ]);
-      if (cancelled) return;
-      setCatalog(catRaw);
-      setCatalogSource(source);
-      setPrivFund(priv);
-      setTreasuryMods(treas.catalog.modules);
+      try {
+        const [{ catalog: catRaw }, priv, treas] = await Promise.all([
+          loadVotingCatalog(),
+          fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
+          loadTreasuryModules(DAO_ADDRESS),
+        ]);
+        if (cancelled) return;
+        setCatalog(catRaw);
+        setPrivFund(priv);
+        setTreasuryMods(treas.catalog.modules);
+        setErr("");
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+      }
     })();
     return () => {
       cancelled = true;
@@ -204,11 +204,6 @@ export function CreateReferendum() {
       <h1 className="page-title">{tt("createVote")}</h1>
       {isCitizen !== true ? (
         <p className="muted">Создавать голосования могут граждане с разблокированным паспортом и кошельком.</p>
-      ) : null}
-      {catalog && catalogSource === "bundle" ? (
-        <p className="muted" style={{ fontSize: 12 }}>
-          Каталог модулей: локальный снимок (API недоступен). После обновления civic API кабинет подтянет новые типы сам.
-        </p>
       ) : null}
 
       {picked == null ? (

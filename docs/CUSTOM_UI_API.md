@@ -254,6 +254,7 @@ Content-Type: application/json
 | GET | `/v1/platform/kyc-tariff` | тариф docs-KYC |
 | GET | `/v1/platform/voting-catalog` | каталог типов голосования (модули create) для кабинетов |
 | GET | `/v1/platform/treasury-modules?dao=` | каталог модулей казны (DexLP / ChainWallet / custom) + адреса при `dao=` |
+| GET | `/v1/platform/cabinet-catalog?dao=` | приложения, секции казны/настроек, мета путей гражданства |
 | POST | `/v1/partner/elig/begin` | сессия «разрешить сайту узнать да/нет» |
 | GET | `/v1/partner/elig/session/:id` | мета сессии (без PII) |
 | GET | `/v1/partner/elig/consume?code=` | один раз забрать результат |

@@ -22,22 +22,12 @@ import {
 } from "../lib/treasuryOps";
 import { isPrivFundEnabled, isTopupActive } from "../lib/votingCatalog";
 import { claimPrivatizationShare } from "../lib/civicActions";
+import { loadCabinetCatalog, type CabinetSection } from "../lib/cabinetCatalog";
 import { fetchDaoCreator, fetchPrivatizationStatus } from "../ton/rpc";
 import { ActionError, isTonConnectFail } from "../components/TonConnectRecovery";
 import { hasLocalVault } from "../lib/passport";
 
-type Sub = "hub" | "convert" | "txHistory" | "dexlp" | "trc20" | "eth" | "btc" | "xmr" | "funds";
-
-const SUB_TITLE: Record<Exclude<Sub, "hub">, string> = {
-  convert: "Конверт",
-  txHistory: "История",
-  dexlp: "DexLP",
-  trc20: "USDT TRC-20",
-  eth: "ETH",
-  btc: "BTC",
-  xmr: "XMR",
-  funds: "Фонды",
-};
+type Sub = string;
 
 function createHref(vtype: number, extra: Record<string, string | undefined> = {}) {
   const q = new URLSearchParams({ vtype: String(vtype) });
@@ -52,6 +42,8 @@ export function Treasury() {
   const wallet = useTonAddress() || appWallet;
   const [ui] = useTonConnectUI();
   const [sub, setSub] = useState<Sub>("hub");
+  const [sections, setSections] = useState<CabinetSection[]>([]);
+  const [catalogErr, setCatalogErr] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [txRows, setTxRows] = useState<TreasuryTxRow[] | null>(null);
@@ -67,6 +59,26 @@ export function Treasury() {
   });
   const [privMsg, setPrivMsg] = useState("");
   const [privErr, setPrivErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const { catalog } = await loadCabinetCatalog();
+        if (alive) {
+          setSections(catalog.treasurySections);
+          setCatalogErr("");
+        }
+      } catch (e) {
+        if (alive) setCatalogErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const sectionTitle = (id: string) => sections.find((s) => s.id === id)?.label || id;
 
   const tonNano = Number(treasury?.ton ?? treasury?.governance ?? NaN);
   const tonHuman = Number.isFinite(tonNano) ? (tonNano > 1e6 ? tonNano / 1e9 : tonNano) : null;
@@ -200,7 +212,7 @@ export function Treasury() {
   return (
     <div className="stack">
       <h1 className="page-title">
-        {sub === "hub" ? tt("treasury") : SUB_TITLE[sub]}
+        {sub === "hub" ? tt("treasury") : sectionTitle(sub)}
       </h1>
       {sub !== "hub" ? (
         <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => setSub("hub")}>
@@ -221,32 +233,21 @@ export function Treasury() {
 
       {sub === "hub" && (
         <>
+          {catalogErr ? <p style={{ color: "var(--maroon)" }}>{catalogErr}</p> : null}
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("funds")}>
-              Фонды
-              {privFundOn || topupOn ? " · вкл" : ""}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("convert")}>
-              {convertOn ? `Конверт · ≥${trimNum(convertMinTon)} TON` : "Конверт · выкл"}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("txHistory")}>
-              История
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("dexlp")}>
-              DexLP
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("trc20")}>
-              TRC-20
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("eth")}>
-              ETH
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("btc")}>
-              BTC
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSub("xmr")}>
-              XMR
-            </button>
+            {sections.map((s) => {
+              let suffix = "";
+              if (s.id === "funds" && (privFundOn || topupOn)) suffix = " · вкл";
+              if (s.id === "convert") {
+                suffix = convertOn ? ` · ≥${trimNum(convertMinTon)} TON` : " · выкл";
+              }
+              return (
+                <button key={s.id} type="button" className="btn btn-ghost" onClick={() => setSub(s.id)}>
+                  {s.label}
+                  {suffix}
+                </button>
+              );
+            })}
           </div>
 
           <div className="card stack">
@@ -572,7 +573,7 @@ export function Treasury() {
 
       {(sub === "eth" || sub === "btc" || sub === "xmr") && (
         <div className="card">
-          <p className="muted">Сеть {SUB_TITLE[sub]} — скоро. Сейчас доступны TON-казна, конверт, DexLP и USDT TRC-20.</p>
+          <p className="muted">Сеть {sectionTitle(sub)} — скоро. Сейчас доступны TON-казна, конверт, DexLP и USDT TRC-20.</p>
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ import {
   type LangApplication,
 } from "../lib/civicActions";
 import { formatJettonAmount, pathEnabled } from "../lib/civic";
+import { loadCabinetCatalog, type CitizenshipPathMeta } from "../lib/cabinetCatalog";
 import { hasLocalVault, getSession, unlockPassport, unlockPassportSilent, issuePassport } from "../lib/passport";
 import { openBulCoinDeposit } from "../lib/telegram";
 import { daoTokenDedustBuyUrl } from "../lib/dedust";
@@ -37,6 +38,22 @@ export function Citizenship() {
   const [langNote, setLangNote] = useState("");
   const [langApps, setLangApps] = useState<LangApplication[]>([]);
   const [langPending, setLangPending] = useState<{ have: number; need: number } | null>(null);
+  const [pathMetaList, setPathMetaList] = useState<CitizenshipPathMeta[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const { catalog } = await loadCabinetCatalog();
+        if (alive) setPathMetaList(catalog.citizenshipPaths);
+      } catch {
+        /* path list from API; enablement still from params */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const active = (q.get("path") || "") as PathId | "";
   /** Citizens may open docs (KYC) or lang (endorse) paths; otherwise go to votings. */
@@ -50,40 +67,30 @@ export function Citizenship() {
 
   const civicPaths = useMemo(() => {
     const list: { id: PathId; title: string; blurb: string }[] = [];
-    if (pathEnabled(params, "pay")) {
-      list.push({
-        id: "pay",
-        title: tt("pathPay"),
-        blurb: tt("pathPayMin", {
-          amount: formatJettonAmount(params.get("cit.path.pay.amount")?.numRaw || params.get("cit.path.pay.amount")?.num),
-        }),
-      });
-    }
-    if (pathEnabled(params, "docs")) {
-      list.push({
-        id: "docs",
-        title: tt("pathDocs"),
-        blurb: kyc
+    for (const m of pathMetaList) {
+      const id = m.id as PathId;
+      if (id !== "pay" && id !== "docs" && id !== "lang" && id !== "wallet") continue;
+      if (!pathEnabled(params, id)) continue;
+      let blurb = m.hint || "";
+      if (id === "pay") {
+        blurb = tt("pathPayMin", {
+          amount: formatJettonAmount(
+            params.get("cit.path.pay.amount")?.numRaw || params.get("cit.path.pay.amount")?.num,
+          ),
+        });
+      } else if (id === "docs") {
+        blurb = kyc
           ? tt("pathDocsKyc", { fee: kyc.feeFloorUsdt ?? 0, symbol: kyc.defaultFeeSymbol || "USDT" })
-          : tt("pathDocsSumsub"),
-      });
-    }
-    if (pathEnabled(params, "lang")) {
-      list.push({
-        id: "lang",
-        title: tt("pathLang"),
-        blurb: tt("pathLangQuorum", { n: params.get("cit.path.lang.quorum")?.num ?? "—" }),
-      });
-    }
-    if (pathEnabled(params, "wallet")) {
-      list.push({
-        id: "wallet",
-        title: tt("pathWallet"),
-        blurb: tt("pathWalletBlurb"),
-      });
+          : tt("pathDocsSumsub");
+      } else if (id === "lang") {
+        blurb = tt("pathLangQuorum", { n: params.get("cit.path.lang.quorum")?.num ?? "—" });
+      } else if (id === "wallet") {
+        blurb = tt("pathWalletBlurb");
+      }
+      list.push({ id, title: m.label, blurb });
     }
     return list;
-  }, [params, kyc, tt]);
+  }, [params, kyc, tt, pathMetaList]);
 
   const tokenMode = civicPaths.length === 0 && !!config?.voteJettonMaster;
   const buyUrl = config?.voteJettonMaster ? daoTokenDedustBuyUrl(config.voteJettonMaster) : "";
