@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installTestnetMocks } from "./helpers/testnetMocks";
 
 async function mockTelegramLang(page: Page, language_code: string) {
   await page.route("https://telegram.org/js/telegram-web-app.js", async (route) => {
@@ -43,6 +44,7 @@ test("Telegram language en shows English UI", async ({ page }) => {
 });
 
 test("cabinet click tour", async ({ page }) => {
+  await installTestnetMocks(page);
   await page.addInitScript(() => {
     sessionStorage.setItem("chv-citizen", "1");
   });
@@ -61,6 +63,7 @@ test("cabinet click tour", async ({ page }) => {
 });
 
 test("bottom nav shows icons on mobile", async ({ page }) => {
+  await installTestnetMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     sessionStorage.setItem("chv-citizen", "1");
@@ -73,6 +76,7 @@ test("bottom nav shows icons on mobile", async ({ page }) => {
 });
 
 test("referendums list loads or refresh works", async ({ page }) => {
+  await installTestnetMocks(page);
   await page.addInitScript(() => {
     sessionStorage.setItem("chv-citizen", "1");
   });
@@ -103,6 +107,7 @@ test("referendums list loads or refresh works", async ({ page }) => {
 });
 
 test("treasury hub has convert and modules tiles", async ({ page }) => {
+  await installTestnetMocks(page);
   await page.addInitScript(() => {
     sessionStorage.setItem("chv-citizen", "1");
   });

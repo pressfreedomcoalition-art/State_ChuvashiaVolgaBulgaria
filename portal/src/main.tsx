@@ -20,21 +20,19 @@ applyLang(resolveInitialLang());
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 
-// Cache/Pinggy first so civic boot can prefer the /civic proxy (no CF).
-void bootCacheApiFromJson()
-  .then(() => bootCivicMirror())
-  .finally(() => {
-    createRoot(document.getElementById("root")!).render(
-      <StrictMode>
-        <ErrorBoundary>
-          <TonConnectUIProvider manifestUrl={tonConnectManifestUrl()}>
-            <BrowserRouter basename={basename}>
-              <AppStateProvider>
-                <App />
-              </AppStateProvider>
-            </BrowserRouter>
-          </TonConnectUIProvider>
-        </ErrorBoundary>
-      </StrictMode>,
-    );
-  });
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <ErrorBoundary>
+      <TonConnectUIProvider manifestUrl={tonConnectManifestUrl()}>
+        <BrowserRouter basename={basename}>
+          <AppStateProvider>
+            <App />
+          </AppStateProvider>
+        </BrowserRouter>
+      </TonConnectUIProvider>
+    </ErrorBoundary>
+  </StrictMode>,
+);
+
+// Prefer Pinggy /civic when live; do not block first paint (E2E + RF UX).
+void bootCacheApiFromJson().then(() => bootCivicMirror());

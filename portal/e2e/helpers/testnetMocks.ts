@@ -222,6 +222,51 @@ export async function installTestnetMocks(page: Page) {
       });
       return;
     }
+    if (path.includes("/v1/platform/cabinet-catalog")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          version: 1,
+          dao: E2E_DAO,
+          apps: [
+            {
+              id: "bulcoin",
+              type: "miniapp",
+              url: "https://t.me/bulcoin_blc",
+              name: "BulCoin E2E",
+              description: "test app",
+              source: "platform",
+            },
+            {
+              id: "cabinet-bot",
+              type: "miniapp",
+              url: "https://t.me/bulgaria_state_bot",
+              name: "Кабинет в Telegram",
+              source: "platform",
+            },
+          ],
+          treasurySections: [
+            { id: "funds", label: "Фонды" },
+            { id: "convert", label: "Конверт" },
+            { id: "txHistory", label: "История" },
+            { id: "dexlp", label: "DexLP" },
+            { id: "trc20", label: "USDT TRC-20" },
+          ],
+          settingsSections: [
+            { id: "wallet", label: "Кошелёк" },
+            { id: "lang", label: "Язык" },
+            { id: "gas", label: "Prepaid-газ" },
+          ],
+          citizenshipPaths: [
+            { id: "pay", paramKey: "cit.path.pay", label: "Оплата" },
+            { id: "docs", paramKey: "cit.path.docs", label: "Документы / KYC" },
+            { id: "lang", paramKey: "cit.path.lang", label: "Язык / поручители" },
+            { id: "wallet", paramKey: "cit.path.wallet", label: "Кошелёк / NFT" },
+          ],
+        },
+      });
+      return;
+    }
 
     // cache peek / list / refresh
     if (path.includes("/v1/cache/")) {
