@@ -296,6 +296,7 @@ export function Login() {
             <>
               <h2>{name || tt("citizenship")}</h2>
               <p className="muted">{tt("loginNeedAccessSimple")}</p>
+              <p className="muted" style={{ fontSize: 13 }}>{tt("rfAccessHint")}</p>
               <button
                 className="btn btn-primary btn-wide"
                 disabled={busy}

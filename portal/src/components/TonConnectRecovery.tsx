@@ -1,5 +1,7 @@
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
+import { civicMirrorLabel, rotateCivicMirror } from "../lib/config";
+import { isCivicNetworkError, switchCivicMirrorAndReload } from "../lib/civicFetch";
 
 /** Detect TonConnect / wallet-send failures from SDK or wrappers. */
 export function isTonConnectFail(msg: string | null | undefined): boolean {
@@ -101,14 +103,39 @@ export function ActionError({
   if (isTonConnectFail(error)) {
     return <TonConnectRecovery error={error} busy={busy} onRetry={onRetry} onDismiss={onDismiss} />;
   }
+  const civicNet = isCivicNetworkError(error);
   return (
     <div className="stack" data-testid="action-error">
       <p style={{ color: "var(--maroon)", margin: 0 }}>{error}</p>
-      {onRetry || onDismiss ? (
+      {civicNet ? (
+        <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+          {tt("errCivicNetworkHint", { mirror: civicMirrorLabel() })}
+        </p>
+      ) : null}
+      {onRetry || onDismiss || civicNet ? (
         <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
           {onRetry ? (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onRetry()}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => {
+                if (civicNet) rotateCivicMirror();
+                onRetry();
+              }}
+            >
               {tt("tryAgain")}
+            </button>
+          ) : null}
+          {civicNet ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={busy}
+              data-testid="civic-switch-mirror"
+              onClick={() => switchCivicMirrorAndReload()}
+            >
+              {tt("switchCivicMirror")}
             </button>
           ) : null}
           {onDismiss ? (

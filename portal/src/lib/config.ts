@@ -25,7 +25,7 @@ const STICKY_CIVIC_KEY = "chv_civic_base_v1";
 const WON_CIVIC = "https://dao.won.onl/civic";
 const BLC_CIVIC = "https://dao.blc.cab/civic";
 
-/** Static portal hosts: prefer won.onl civic (no CF) so RF users can reach API. */
+/** Static portal hosts: prefer won.onl civic so RF users can reach API. */
 function preferWonCivic() {
   if (forceWonCivic()) return true;
   const h = host();
@@ -56,6 +56,39 @@ export function rememberCivicBase(url: string) {
   }
 }
 
+/** Drop sticky (optionally only if it matches `url`) so failover can try another mirror. */
+export function forgetCivicBase(url?: string) {
+  try {
+    const sticky = readStickyCivic();
+    if (!url || sticky === String(url).replace(/\/$/, "")) {
+      sessionStorage.removeItem(STICKY_CIVIC_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Flip preferred civic mirror and clear sticky — for RF when one CF edge is dead. */
+export function rotateCivicMirror(): string {
+  const sticky = readStickyCivic();
+  const primary = preferWonCivic() ? WON_CIVIC : BLC_CIVIC;
+  const current = sticky || primary;
+  const next = current === WON_CIVIC ? BLC_CIVIC : WON_CIVIC;
+  try {
+    sessionStorage.setItem("chv_civic_force_won", next === WON_CIVIC ? "1" : "0");
+    sessionStorage.setItem(STICKY_CIVIC_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+export function civicMirrorLabel(base = civicBase()): string {
+  if (base.includes("won.onl")) return "dao.won.onl";
+  if (base.includes("blc.cab")) return "dao.blc.cab";
+  return base.replace(/^https?:\/\//, "").replace(/\/civic$/, "");
+}
+
 /** Ordered civic bases for fetch failover (sticky first, then preferred mirror). */
 export function civicFetchBases(): string[] {
   if (isLocalHost()) return ["/civic"];
@@ -77,6 +110,34 @@ export function civicBase() {
   if (preferWonCivic()) return WON_CIVIC;
   const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
   return env || WON_CIVIC;
+}
+
+/**
+ * Probe mirrors at boot (short timeout). Pins first healthy base so RF
+ * does not wait on a hung Cloudflare edge stuck in sticky.
+ */
+export async function bootCivicMirror() {
+  if (typeof window === "undefined" || isLocalHost()) return;
+  const bases = civicFetchBases();
+  for (const base of bases) {
+    try {
+      const ctrl = new AbortController();
+      const t = window.setTimeout(() => ctrl.abort(), 4_000);
+      const res = await fetch(`${base.replace(/\/$/, "")}/health`, {
+        signal: ctrl.signal,
+        credentials: "omit",
+        cache: "no-store",
+      });
+      window.clearTimeout(t);
+      if (res.ok) {
+        rememberCivicBase(base);
+        return;
+      }
+      forgetCivicBase(base);
+    } catch {
+      forgetCivicBase(base);
+    }
+  }
 }
 
 /**

@@ -5,7 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import { App } from "./App";
 import { AppStateProvider } from "./state/AppState";
-import { tonConnectManifestUrl, bootCacheApiFromJson } from "./lib/config";
+import { tonConnectManifestUrl, bootCacheApiFromJson, bootCivicMirror } from "./lib/config";
 import { bootAutoFix } from "./lib/autoFix";
 import { bootBugLog } from "./lib/bugLog";
 import { bootTelegram } from "./lib/telegram";
@@ -20,7 +20,7 @@ applyLang(resolveInitialLang());
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 
-void bootCacheApiFromJson().finally(() => {
+void Promise.all([bootCivicMirror(), bootCacheApiFromJson()]).finally(() => {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <ErrorBoundary>

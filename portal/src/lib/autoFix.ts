@@ -41,6 +41,7 @@ const RULES: FixRule[] = [
     test: (msg) => /failed to fetch|networkerror|load failed/i.test(msg) && /civic|dao\./i.test(msg),
     apply: () => {
       try {
+        sessionStorage.removeItem("chv_civic_base_v1");
         sessionStorage.setItem("chv_civic_force_won", "1");
       } catch {
         /* ignore */
