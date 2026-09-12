@@ -31,7 +31,7 @@ test.describe("citizenship flows (testnet mocks)", () => {
     await page.getByRole("button", { name: /Назад|Back|Каялла/i }).click();
 
     await page.getByTestId("cit-path-lang").click();
-    await expect(page.getByText(/Путь поручителей|endorser path|Поручитель çулĕ/i)).toBeVisible();
+    await expect(page.getByTestId("cit-lang-apply")).toBeVisible();
     await page.getByRole("button", { name: /Назад|Back|Каялла/i }).click();
 
     await page.getByTestId("cit-path-wallet").click();
