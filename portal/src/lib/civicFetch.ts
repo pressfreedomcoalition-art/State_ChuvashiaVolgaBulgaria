@@ -38,36 +38,40 @@ function withTimeout(parent?: AbortSignal): { signal: AbortSignal; clear: () => 
 }
 
 /**
- * fetch against civic mirrors (won.onl ↔ blc.cab). Sticky on success.
- * Per-request timeout so a hung CF edge does not block failover (critical for RF).
+ * fetch against civic mirrors (Pinggy proxy → won.onl ↔ blc.cab). Sticky on success.
+ * Auto-failover with per-request timeout — no manual mirror button required.
  */
 export async function civicFetch(path: string, init?: RequestInit): Promise<Response> {
-  const bases = civicFetchBases();
   let lastNet: unknown;
   const rel = path.startsWith("/") ? path : `/${path}`;
-  for (let i = 0; i < bases.length; i++) {
-    const base = bases[i]!;
-    const { signal, clear } = withTimeout(init?.signal ?? undefined);
-    try {
-      const res = await fetch(`${base.replace(/\/$/, "")}${rel}`, {
-        ...init,
-        signal,
-        credentials: init?.credentials ?? "omit",
-      });
-      clear();
-      if ([502, 503, 504].includes(res.status) && i < bases.length - 1) {
+  // Two passes: if all fail once, rotate sticky and try the ordered list again.
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass === 1) rotateCivicMirror();
+    const bases = civicFetchBases();
+    for (let i = 0; i < bases.length; i++) {
+      const base = bases[i]!;
+      const { signal, clear } = withTimeout(init?.signal ?? undefined);
+      try {
+        const res = await fetch(`${base.replace(/\/$/, "")}${rel}`, {
+          ...init,
+          signal,
+          credentials: init?.credentials ?? "omit",
+        });
+        clear();
+        if ([502, 503, 504].includes(res.status) && (i < bases.length - 1 || pass === 0)) {
+          forgetCivicBase(base);
+          lastNet = new Error(`civic ${res.status}`);
+          continue;
+        }
+        rememberCivicBase(base);
+        return res;
+      } catch (e) {
+        clear();
+        lastNet = e;
         forgetCivicBase(base);
-        lastNet = new Error(`civic ${res.status}`);
-        continue;
-      }
-      rememberCivicBase(base);
-      return res;
-    } catch (e) {
-      clear();
-      lastNet = e;
-      forgetCivicBase(base);
-      if (!isNetworkFail(e) && i === bases.length - 1) {
-        throw e instanceof Error ? e : new Error(String(e));
+        if (!isNetworkFail(e) && i === bases.length - 1 && pass === 1) {
+          throw e instanceof Error ? e : new Error(String(e));
+        }
       }
     }
   }

@@ -1,7 +1,7 @@
 import { useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
+import { isCivicNetworkError } from "../lib/civicFetch";
 import { civicMirrorLabel, rotateCivicMirror } from "../lib/config";
-import { isCivicNetworkError, switchCivicMirrorAndReload } from "../lib/civicFetch";
 
 /** Detect TonConnect / wallet-send failures from SDK or wrappers. */
 export function isTonConnectFail(msg: string | null | undefined): boolean {
@@ -112,7 +112,7 @@ export function ActionError({
           {tt("errCivicNetworkHint", { mirror: civicMirrorLabel() })}
         </p>
       ) : null}
-      {onRetry || onDismiss || civicNet ? (
+      {onRetry || onDismiss ? (
         <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
           {onRetry ? (
             <button
@@ -125,17 +125,6 @@ export function ActionError({
               }}
             >
               {tt("tryAgain")}
-            </button>
-          ) : null}
-          {civicNet ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              data-testid="civic-switch-mirror"
-              onClick={() => switchCivicMirrorAndReload()}
-            >
-              {tt("switchCivicMirror")}
             </button>
           ) : null}
           {onDismiss ? (

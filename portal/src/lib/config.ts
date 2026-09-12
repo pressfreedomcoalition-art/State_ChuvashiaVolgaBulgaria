@@ -25,6 +25,21 @@ const STICKY_CIVIC_KEY = "chv_civic_base_v1";
 const WON_CIVIC = "https://dao.won.onl/civic";
 const BLC_CIVIC = "https://dao.blc.cab/civic";
 
+/** Pinggy cache host + `/civic` reverse-proxy (set by bootCacheApiFromJson). */
+let civicProxyRuntime = "";
+
+export function setCivicProxyRuntime(url: string) {
+  civicProxyRuntime = String(url || "").trim().replace(/\/$/, "");
+}
+
+export function getCivicProxyRuntime() {
+  return civicProxyRuntime;
+}
+
+function isHttpsCivicBase(base: string): boolean {
+  return /^https:\/\//i.test(base) && /\/civic$/i.test(base);
+}
+
 /** Static portal hosts: prefer won.onl civic so RF users can reach API. */
 function preferWonCivic() {
   if (forceWonCivic()) return true;
@@ -39,7 +54,7 @@ function preferWonCivic() {
 function readStickyCivic(): string {
   try {
     const v = String(sessionStorage.getItem(STICKY_CIVIC_KEY) || "").trim().replace(/\/$/, "");
-    if (v === WON_CIVIC || v === BLC_CIVIC) return v;
+    if (isHttpsCivicBase(v)) return v;
   } catch {
     /* ignore */
   }
@@ -48,7 +63,7 @@ function readStickyCivic(): string {
 
 export function rememberCivicBase(url: string) {
   const base = String(url || "").trim().replace(/\/$/, "");
-  if (base !== WON_CIVIC && base !== BLC_CIVIC) return;
+  if (!isHttpsCivicBase(base)) return;
   try {
     sessionStorage.setItem(STICKY_CIVIC_KEY, base);
   } catch {
@@ -68,12 +83,24 @@ export function forgetCivicBase(url?: string) {
   }
 }
 
-/** Flip preferred civic mirror and clear sticky — for RF when one CF edge is dead. */
-export function rotateCivicMirror(): string {
-  const sticky = readStickyCivic();
+/** Candidate mirrors in preferred order (Pinggy proxy first when live). */
+function civicMirrorCandidates(): string[] {
   const primary = preferWonCivic() ? WON_CIVIC : BLC_CIVIC;
-  const current = sticky || primary;
-  const next = current === WON_CIVIC ? BLC_CIVIC : WON_CIVIC;
+  const secondary = primary === WON_CIVIC ? BLC_CIVIC : WON_CIVIC;
+  const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
+  const out: string[] = [];
+  for (const b of [civicProxyRuntime, primary, secondary, env]) {
+    if (b && isHttpsCivicBase(b) && !out.includes(b)) out.push(b);
+  }
+  return out.length ? out : [WON_CIVIC, BLC_CIVIC];
+}
+
+/** Flip to the next mirror automatically (cycles proxy → won → blc). */
+export function rotateCivicMirror(): string {
+  const list = civicMirrorCandidates();
+  const sticky = readStickyCivic();
+  const idx = sticky ? list.indexOf(sticky) : -1;
+  const next = list[(idx + 1) % list.length] || WON_CIVIC;
   try {
     sessionStorage.setItem("chv_civic_force_won", next === WON_CIVIC ? "1" : "0");
     sessionStorage.setItem(STICKY_CIVIC_KEY, next);
@@ -84,20 +111,19 @@ export function rotateCivicMirror(): string {
 }
 
 export function civicMirrorLabel(base = civicBase()): string {
+  if (civicProxyRuntime && base === civicProxyRuntime) return "proxy (Pinggy)";
   if (base.includes("won.onl")) return "dao.won.onl";
   if (base.includes("blc.cab")) return "dao.blc.cab";
+  if (base.includes("pinggy")) return "proxy (Pinggy)";
   return base.replace(/^https?:\/\//, "").replace(/\/civic$/, "");
 }
 
-/** Ordered civic bases for fetch failover (sticky first, then preferred mirror). */
+/** Ordered civic bases for fetch failover (sticky first, then Pinggy, then platform). */
 export function civicFetchBases(): string[] {
   if (isLocalHost()) return ["/civic"];
   const sticky = readStickyCivic();
-  const primary = preferWonCivic() ? WON_CIVIC : BLC_CIVIC;
-  const secondary = primary === WON_CIVIC ? BLC_CIVIC : WON_CIVIC;
-  const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
   const out: string[] = [];
-  for (const b of [sticky, primary, secondary, env]) {
+  for (const b of [sticky, ...civicMirrorCandidates()]) {
     if (b && !out.includes(b)) out.push(b);
   }
   return out.length ? out : [WON_CIVIC, BLC_CIVIC];
@@ -107,6 +133,7 @@ export function civicBase() {
   if (isLocalHost()) return "/civic";
   const sticky = readStickyCivic();
   if (sticky) return sticky;
+  if (civicProxyRuntime) return civicProxyRuntime;
   if (preferWonCivic()) return WON_CIVIC;
   const env = String(import.meta.env.VITE_CIVIC_API || "").trim().replace(/\/$/, "");
   return env || WON_CIVIC;
@@ -115,6 +142,7 @@ export function civicBase() {
 /**
  * Probe mirrors at boot (short timeout). Pins first healthy base so RF
  * does not wait on a hung Cloudflare edge stuck in sticky.
+ * Call after bootCacheApiFromJson so Pinggy `/civic` is in the list.
  */
 export async function bootCivicMirror() {
   if (typeof window === "undefined" || isLocalHost()) return;
@@ -203,11 +231,14 @@ export async function bootCacheApiFromJson() {
   if (!candidate) return;
   if (await probeCacheHost(candidate)) {
     setCacheApiRuntime(candidate);
+    // Same tunnel also reverse-proxies /civic (RF bypass of Cloudflare).
+    setCivicProxyRuntime(`${candidate.replace(/\/$/, "")}/civic`);
     return;
   }
   // Stale Pinggy / offline own cache must not break referendums.
   cacheApiSkip = true;
   cacheApiRuntime = "";
+  setCivicProxyRuntime("");
 }
 
 export const CIVIC_API = civicBase();

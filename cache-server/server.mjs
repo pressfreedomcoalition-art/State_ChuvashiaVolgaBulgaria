@@ -1,6 +1,6 @@
 /**
- * CHV State cache server — McKeys snapshots only.
- * Civic passport / vote / gas stay on platform civic-verifier.
+ * CHV State cache server — McKeys snapshots + civic reverse-proxy for RF.
+ * Snapshots: /v1/cache/*  |  Civic mirror (no CF): /civic/* → CIVIC_UPSTREAM
  *
  * Env:
  *   PORT=8790
@@ -10,6 +10,7 @@
  *   CACHE_SECRET=…           (optional Bearer for POST /invalidate)
  *   TONAPI_KEY=…             (optional; LT checks on non-soft live keys)
  *   DATA_DIR=./data
+ *   CIVIC_UPSTREAM=https://dao.won.onl/civic   (Pinggy /civic proxy target)
  */
 import express from 'express'
 import { join, dirname } from 'node:path'
@@ -25,6 +26,9 @@ const LANG_DAO_ADDRESS = String(process.env.LANG_DAO_ADDRESS || '').trim()
 const CACHE_SECRET = String(process.env.CACHE_SECRET || '').trim()
 const TONAPI_KEY = String(process.env.TONAPI_KEY || '').trim()
 const DATA_DIR = String(process.env.DATA_DIR || join(__dirname, 'data')).trim()
+const CIVIC_UPSTREAM = String(process.env.CIVIC_UPSTREAM || 'https://dao.won.onl/civic')
+  .trim()
+  .replace(/\/$/, '')
 
 /** @type {Map<string, { n: number, reset: number }>} */
 const buckets = new Map()
@@ -154,7 +158,6 @@ const listCache = createListCache({
 
 const app = express()
 app.disable('x-powered-by')
-app.use(express.json({ limit: '2mb' }))
 
 app.use((req, res, next) => {
   applyCors(req, res, process.env)
@@ -162,12 +165,58 @@ app.use((req, res, next) => {
   next()
 })
 
+/**
+ * Reverse-proxy platform civic through Pinggy (avoids Cloudflare from RF).
+ * Mounted before express.json so POST bodies stay raw.
+ */
+app.use('/civic', async (req, res) => {
+  if (!rateLimit(`civic-proxy:${clientIp(req)}`, 180, 60_000)) {
+    return res.status(429).json({ ok: false, error: 'rate' })
+  }
+  const pathAndQuery = req.url || '/'
+  const target = `${CIVIC_UPSTREAM}${pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`}`
+  const headers = {}
+  const ct = req.headers['content-type']
+  if (ct) headers['content-type'] = ct
+  const accept = req.headers.accept
+  if (accept) headers.accept = accept
+  const auth = req.headers.authorization
+  if (auth) headers.authorization = auth
+
+  /** @type {Buffer|undefined} */
+  let body
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    body = Buffer.concat(chunks)
+  }
+
+  try {
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body: body && body.length ? body : undefined,
+      signal: AbortSignal.timeout(25_000),
+    })
+    res.status(upstream.status)
+    const uct = upstream.headers.get('content-type')
+    if (uct) res.setHeader('content-type', uct)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    res.end(buf)
+  } catch (e) {
+    res.status(502).json({ ok: false, error: e?.message || 'civic_upstream' })
+  }
+})
+
+app.use(express.json({ limit: '2mb' }))
+
 app.get('/health', (_req, res) => {
   const st = listCache.stats()
   res.json({
     ok: true,
     service: 'chv-cache',
     dao: DAO_ADDRESS || null,
+    civicUpstream: CIVIC_UPSTREAM,
     entries: st.keys ?? 0,
   })
 })
@@ -314,5 +363,7 @@ if (!DAO_ADDRESS) {
 }
 
 app.listen(PORT, () => {
-  console.log(`[chv-cache] :${PORT} dao=${DAO_ADDRESS || '(unset)'} data=${DATA_DIR}`)
+  console.log(
+    `[chv-cache] :${PORT} dao=${DAO_ADDRESS || '(unset)'} civic→${CIVIC_UPSTREAM} data=${DATA_DIR}`,
+  )
 })

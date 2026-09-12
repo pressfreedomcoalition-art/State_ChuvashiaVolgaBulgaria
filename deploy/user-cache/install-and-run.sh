@@ -38,7 +38,12 @@ PORT=8790
 DAO_ADDRESS=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx
 CORS_ORIGIN=https://chv.blc.cab,http://localhost:5173
 DATA_DIR=./data
+CIVIC_UPSTREAM=https://dao.won.onl/civic
 ENV
+fi
+# Ensure civic proxy target exists on older .env files
+if [[ -f "${ROOT}/.env" ]] && ! grep -q '^CIVIC_UPSTREAM=' "${ROOT}/.env"; then
+  echo 'CIVIC_UPSTREAM=https://dao.won.onl/civic' >>"${ROOT}/.env"
 fi
 
 cd "$ROOT"
