@@ -9,7 +9,6 @@ on:
         required: true
         default: "REFRESH"
   schedule:
-    # Free Pinggy ~60m; GitHub cron drifts — keep tight
     - cron: "*/20 * * * *"
 
 jobs:
@@ -41,57 +40,54 @@ jobs:
           SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           MODE="${MODE:-REFRESH}"
+          echo "MODE=$MODE"
 
           TMP=$(mktemp -d)
           trap 'rm -rf "$TMP"' EXIT
+          cp deploy/user-cache/install-and-run.sh \
+             deploy/user-cache/start-user-cache.sh \
+             deploy/user-cache/refresh-tunnel.sh \
+             "$TMP/"
 
           if [[ "$MODE" == "OWN_VPS" ]]; then
             tar -cf "$TMP/bundle.tar" \
               --exclude=node_modules --exclude=data --exclude=.env \
               -C cache-server .
-            cp deploy/user-cache/install-and-run.sh \
-               deploy/user-cache/start-user-cache.sh \
-               deploy/user-cache/refresh-tunnel.sh \
-               "$TMP/"
-            "${SCP[@]}" "$TMP/bundle.tar" "$TMP/install-and-run.sh" \
-              "$TMP/start-user-cache.sh" "$TMP/refresh-tunnel.sh" \
+            "${SCP[@]}" "$TMP/bundle.tar" \
+              "$TMP/install-and-run.sh" "$TMP/start-user-cache.sh" "$TMP/refresh-tunnel.sh" \
               "${USER_}@${HOST}:/tmp/"
-            "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
-            set -euo pipefail
-            chmod +x /tmp/install-and-run.sh /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh
-            mkdir -p "$HOME/chv-cache"
-            cp /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh "$HOME/chv-cache/"
-            chmod +x "$HOME/chv-cache/start-user-cache.sh" "$HOME/chv-cache/refresh-tunnel.sh"
-            /tmp/install-and-run.sh /tmp/bundle.tar
-            # VPS-local cron: refresh tunnel before Pinggy free expiry (no sudo)
-            ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' || true
-              echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
-              echo "@reboot $HOME/chv-cache/start-user-cache.sh"
-            ) | crontab -
-            cat "$HOME/chv-cache/public-url.txt"
-            REMOTE
+            "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
+          set -euo pipefail
+          chmod +x /tmp/install-and-run.sh /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh
+          mkdir -p "$HOME/chv-cache/logs"
+          cp /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh "$HOME/chv-cache/"
+          chmod +x "$HOME/chv-cache/start-user-cache.sh" "$HOME/chv-cache/refresh-tunnel.sh"
+          /tmp/install-and-run.sh /tmp/bundle.tar
+          ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
+            echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
+            echo "@reboot $HOME/chv-cache/start-user-cache.sh"
+          ) | crontab -
+          cat "$HOME/chv-cache/public-url.txt"
+          EOS
           else
-            # REFRESH / schedule: only tunnel + scripts
-            cp deploy/user-cache/refresh-tunnel.sh deploy/user-cache/start-user-cache.sh "$TMP/"
             "${SCP[@]}" "$TMP/refresh-tunnel.sh" "$TMP/start-user-cache.sh" \
               "${USER_}@${HOST}:/tmp/"
-            "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
-            set -euo pipefail
-            mkdir -p "$HOME/chv-cache/logs"
-            cp /tmp/refresh-tunnel.sh /tmp/start-user-cache.sh "$HOME/chv-cache/"
-            chmod +x "$HOME/chv-cache/refresh-tunnel.sh" "$HOME/chv-cache/start-user-cache.sh"
-            ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
-              echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
-              echo "@reboot $HOME/chv-cache/start-user-cache.sh"
-            ) | crontab -
-            # ensure node is up
-            if ! curl -fsS --max-time 3 http://127.0.0.1:8790/health >/dev/null 2>&1; then
-              "$HOME/chv-cache/start-user-cache.sh" || true
-              sleep 3
-            fi
-            "$HOME/chv-cache/refresh-tunnel.sh"
-            cat "$HOME/chv-cache/public-url.txt"
-            REMOTE
+            "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
+          set -euo pipefail
+          mkdir -p "$HOME/chv-cache/logs"
+          cp /tmp/refresh-tunnel.sh /tmp/start-user-cache.sh "$HOME/chv-cache/"
+          chmod +x "$HOME/chv-cache/refresh-tunnel.sh" "$HOME/chv-cache/start-user-cache.sh"
+          ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
+            echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
+            echo "@reboot $HOME/chv-cache/start-user-cache.sh"
+          ) | crontab -
+          if ! curl -fsS --max-time 3 http://127.0.0.1:8790/health >/dev/null 2>&1; then
+            "$HOME/chv-cache/start-user-cache.sh" || true
+            sleep 3
+          fi
+          "$HOME/chv-cache/refresh-tunnel.sh"
+          cat "$HOME/chv-cache/public-url.txt"
+          EOS
           fi
 
           URL=$("${SSH[@]}" "${USER_}@${HOST}" "cat \$HOME/chv-cache/public-url.txt")
@@ -100,7 +96,7 @@ jobs:
           curl -fsS --max-time 30 "${URL}/health"
           echo
 
-      - name: Commit cache-api.json (raw.githubusercontent.com — no Pages rebuild needed)
+      - name: Commit cache-api.json
         env:
           CACHE_URL: ${{ steps.pub.outputs.url }}
         run: |
