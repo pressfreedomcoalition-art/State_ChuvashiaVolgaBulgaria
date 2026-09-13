@@ -6,6 +6,7 @@ import {
   normalizeVotingDetail,
   votingAddress,
   votingAwaitingFinalize,
+  votingStatus,
   type VotingRow,
   type VotingState,
 } from "./civic";
