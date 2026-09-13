@@ -113,7 +113,10 @@ test.describe("voting flows (testnet mocks)", () => {
     await expect(page.getByTestId("voting-finalize")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("vote-option")).toHaveCount(0);
     await page.getByTestId("voting-finalize").click();
-    await expect(page.getByText(/Итог отправлен/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("voting-finalize")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByText(/Итог отправлен|Голосование окончено|Voting finished|Result submitted/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test("create decision referendum and auto-launch", async ({ page }) => {

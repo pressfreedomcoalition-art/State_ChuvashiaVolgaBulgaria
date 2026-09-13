@@ -55,6 +55,7 @@ export function ReferendumDetail() {
     if (st && votingStatus(st) === "finished") {
       markFinalizeSent();
       setState(st);
+      setInfo("");
       return st;
     }
     // Keep optimistic «finished» paint while get_status still says active.
@@ -388,7 +389,7 @@ export function ReferendumDetail() {
         </div>
       ) : null}
 
-      {info && st !== "finished" ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
+      {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
       {err ? (
         <div className="stack">
           {isInsufficientGasError(err) ? (

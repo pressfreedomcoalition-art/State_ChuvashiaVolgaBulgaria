@@ -272,9 +272,15 @@ export async function installTestnetMocks(page: Page) {
 
     // cache peek / list / refresh
     if (path.includes("/v1/cache/")) {
-      const key =
-        url.searchParams.get("key") ||
-        (method === "POST" ? String((await req.postDataJSON().catch(() => ({}))).key || "") : "");
+      let key = url.searchParams.get("key") || "";
+      if (!key && method === "POST") {
+        try {
+          const body = req.postDataJSON() as { key?: string } | null;
+          key = String(body?.key || "");
+        } catch {
+          key = "";
+        }
+      }
       const value = cacheValue(key);
       if (value == null && path.includes("list")) {
         await route.fulfill({ status: 404, json: { ok: false, error: "miss" } });
