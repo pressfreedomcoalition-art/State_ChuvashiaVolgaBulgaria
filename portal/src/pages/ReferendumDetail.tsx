@@ -28,8 +28,16 @@ export function ReferendumDetail() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
+  /** DAO parity: hide finalize as soon as the tx leaves the wallet (chain status lags). */
+  const [finalizeSent, setFinalizeSent] = useState(false);
+  const finalizeSentRef = useRef(false);
   const pending = readPendingLaunch(address);
   const retryRef = useRef<null | (() => void)>(null);
+
+  function markFinalizeSent() {
+    finalizeSentRef.current = true;
+    setFinalizeSent(true);
+  }
 
   function fail(e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -44,9 +52,37 @@ export function ReferendumDetail() {
 
   async function reload() {
     const st = await loadVoting(address);
+    if (st && votingStatus(st) === "finished") {
+      markFinalizeSent();
+      setState(st);
+      return st;
+    }
+    // Keep optimistic «finished» paint while get_status still says active.
+    if (finalizeSentRef.current) {
+      setState((prev) => ({
+        ...(st || {}),
+        ...(prev || {}),
+        status: "finished",
+        title: st?.title || st?.name || prev?.title || prev?.name,
+        name: st?.name || prev?.name,
+        description: st?.description || prev?.description,
+        options: st?.options?.length ? st.options : prev?.options,
+        results: st?.results?.length ? st.results : prev?.results,
+        endsAt: st?.endsAt ?? st?.settings?.endTime ?? prev?.endsAt,
+        settings: st?.settings || prev?.settings,
+      }));
+      return st;
+    }
     setState(st);
     return st;
   }
+
+  useEffect(() => {
+    finalizeSentRef.current = false;
+    setFinalizeSent(false);
+    setInfo("");
+    setErr("");
+  }, [address]);
 
   useEffect(() => {
     if (hasLocalVoted(address, wallet)) setDone(true);
@@ -119,13 +155,15 @@ export function ReferendumDetail() {
   const options = state?.options || state?.results || row?.options || [];
   const total = options.reduce((s, o) => s + optionVotes(o), 0);
   const needFinalize = votingAwaitingFinalize(state || row);
-  const canVote = (st === "active" || st === "unknown") && !needFinalize && !done;
-  const showFinalize = needFinalize && st !== "finished";
+  const canVote = (st === "active" || st === "unknown") && !needFinalize && !done && !finalizeSent;
+  // DAO VotingDetail: hide finalize once tx left wallet; also require ballots (total > 0).
+  const showFinalize =
+    !finalizeSent && st !== "finished" && needFinalize && total > 0;
   const endMs = endsAtMs(state || row);
   const endLabel = endMs ? formatDateTime(endMs) : "";
 
   function statusLabel() {
-    if (st === "finished") return tt("votingDone");
+    if (st === "finished" || finalizeSent) return tt("votingDone");
     if (st === "pending") return tt("votingPending");
     if (showFinalize || st === "awaiting_finalize") return tt("votingAwaitFinalize");
     return tt("votingOpen");
@@ -251,10 +289,20 @@ export function ReferendumDetail() {
     setErr("");
     try {
       await finalizeVoting({ ui, voting: address });
+      // Same as DAO: hide CTA immediately — chain get_status lags several seconds.
+      markFinalizeSent();
+      setState((prev) => ({
+        ...(prev || {}),
+        status: "finished",
+        options: prev?.options || options,
+        results: prev?.results || options,
+      }));
       setInfo(tt("finalizeSent"));
       retryRef.current = null;
-      await refresh();
-      await reload();
+      void refresh({ forceVotings: true });
+      window.setTimeout(() => {
+        void reload();
+      }, 4_000);
     } catch (e) {
       fail(e);
     } finally {
@@ -269,10 +317,12 @@ export function ReferendumDetail() {
       </Link>
       <h1 className="page-title">{title}</h1>
       <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>{statusLabel()}</span>
+        <span className={`badge ${st === "finished" || finalizeSent ? "badge-ok" : "badge-run"}`}>{statusLabel()}</span>
         {endLabel ? (
           <span className="muted" data-testid="voting-ends-at">
-            {st === "finished" || needFinalize ? tt("endedAt", { when: endLabel }) : tt("endsAt", { when: endLabel })}
+            {st === "finished" || finalizeSent || needFinalize
+              ? tt("endedAt", { when: endLabel })
+              : tt("endsAt", { when: endLabel })}
           </span>
         ) : null}
       </div>
@@ -338,7 +388,7 @@ export function ReferendumDetail() {
         </div>
       ) : null}
 
-      {info ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
+      {info && st !== "finished" ? <p style={{ color: "var(--ok)" }}>{info}</p> : null}
       {err ? (
         <div className="stack">
           {isInsufficientGasError(err) ? (
