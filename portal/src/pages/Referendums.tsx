@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../state/AppState";
-import { endsAtMs, votingAddress, votingStatus } from "../lib/civic";
+import { endsAtMs, votingAddress, votingAwaitingFinalize, votingStatus } from "../lib/civic";
 import { formatDateTime } from "../lib/format";
+
+const LIST_POLL_MS = 45_000;
+
+function listStatus(v: Parameters<typeof votingStatus>[0]) {
+  if (votingAwaitingFinalize(v)) return "awaiting_finalize" as const;
+  return votingStatus(v);
+}
 
 export function Referendums() {
   const { tt, votings, loading, refresh, error } = useApp();
@@ -16,6 +23,14 @@ export function Referendums() {
       setBusy(false);
     }
   }
+
+  // Soft revalidate while the tab is open (CACHE_POLICY: votings ~45s).
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      void refresh({ forceVotings: true });
+    }, LIST_POLL_MS);
+    return () => window.clearInterval(t);
+  }, [refresh]);
 
   return (
     <div className="stack">
@@ -50,9 +65,11 @@ export function Referendums() {
       ) : null}
       {votings.map((v) => {
         const addr = votingAddress(v);
-        const st = votingStatus(v);
+        const st = listStatus(v);
         const endMs = endsAtMs(v);
         const endLabel = endMs ? formatDateTime(endMs) : "";
+        const opts = (v.options || []).filter((o) => o.title || o.text || o.address);
+        const showOutcome = (st === "finished" || st === "awaiting_finalize") && opts.length > 0;
         return (
           <article key={addr || v.title} className="card" data-testid="voting-card">
             <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
@@ -73,8 +90,24 @@ export function Referendums() {
             ) : null}
             <h3 style={{ margin: "10px 0 8px" }}>{v.title || addr}</h3>
             {v.description ? <p className="muted">{v.description}</p> : null}
+            {showOutcome ? (
+              <ul style={{ margin: "0 0 12px", paddingLeft: 18 }} data-testid="voting-card-results">
+                {opts.map((o) => {
+                  const votes = Number(o.votes ?? o.weight ?? 0);
+                  const pct = o.pct != null ? Number(o.pct) : null;
+                  return (
+                    <li key={o.address || o.title || o.text} className="muted" style={{ marginBottom: 4 }}>
+                      <strong style={{ color: "var(--ink, inherit)" }}>{o.title || o.text || "—"}</strong>
+                      {": "}
+                      {votes}
+                      {pct != null && Number.isFinite(pct) ? ` (${pct}%)` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             <Link className="btn btn-primary" to={`/referendums/${encodeURIComponent(addr)}`}>
-              {st === "finished" ? tt("results") : tt("vote")}
+              {st === "finished" ? tt("results") : st === "awaiting_finalize" ? tt("results") : tt("vote")}
             </Link>
           </article>
         );

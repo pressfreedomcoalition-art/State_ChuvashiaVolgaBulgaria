@@ -1,6 +1,14 @@
 import { Address } from "@ton/core";
 import { DAO_ADDRESS, cacheBase, civicFetchBases } from "./config";
-import { cacheGet, type VotingRow } from "./civic";
+import {
+  cacheGet,
+  endsAtMs,
+  normalizeVotingDetail,
+  votingAddress,
+  votingAwaitingFinalize,
+  type VotingRow,
+  type VotingState,
+} from "./civic";
 
 type RawVoting = VotingRow & {
   id?: string;
@@ -28,7 +36,8 @@ function cacheAndCivicBases(preferCivicFirst = false): string[] {
   return out;
 }
 
-function normalizeVoting(raw: RawVoting): VotingRow | null {
+/** Normalize list row; keep awaitingFinalize/notStarted for UI status. */
+export function normalizeVoting(raw: RawVoting): VotingRow | null {
   const address = raw.address || raw.voting || raw.id || "";
   if (!address) return null;
   let bounce = address;
@@ -39,10 +48,19 @@ function normalizeVoting(raw: RawVoting): VotingRow | null {
   }
   let status = String(raw.status || "").toLowerCase();
   if (raw.notStarted) status = "pending";
-  else if (raw.awaitingFinalize) status = "pending";
   else if (status === "closed" || status === "finished" || status === "done") status = "finished";
   else if (status === "active" || status === "open" || status === "running") status = "active";
+  else if (raw.awaitingFinalize) status = status && status !== "pending" ? status : "active";
   else if (!status) status = "unknown";
+
+  const awaitingFinalize =
+    !!raw.awaitingFinalize ||
+    (status !== "finished" &&
+      status !== "pending" &&
+      (() => {
+        const end = endsAtMs({ endsAt: raw.endsAt });
+        return end != null && Date.now() >= end;
+      })());
 
   return {
     address: bounce,
@@ -53,6 +71,8 @@ function normalizeVoting(raw: RawVoting): VotingRow | null {
     kind: typeof raw.kind === "number" ? raw.kind : undefined,
     endsAt: raw.endsAt,
     options: raw.options,
+    notStarted: !!raw.notStarted,
+    awaitingFinalize,
   };
 }
 
@@ -123,31 +143,68 @@ async function cachePeek(key: string): Promise<unknown | null> {
 }
 
 /**
- * Votings list: peek (warm civic) → list → server refresh.
- * `list` is often a 404 miss while `peek` still has the snapshot.
+ * Overlay live `votingState:` onto list rows (status, endsAt, options/results).
+ * Soft TTL on `/list` keeps these fresher than sticky `votings:` peek alone.
+ */
+export async function enrichVotingsFromState(rows: VotingRow[]): Promise<VotingRow[]> {
+  if (!rows.length) return rows;
+  const enriched = await Promise.all(
+    rows.map(async (row) => {
+      const addr = votingAddress(row);
+      if (!addr) return row;
+      try {
+        const state = await cacheGet<VotingState>(`votingState:${addr}`);
+        if (!state) {
+          return {
+            ...row,
+            awaitingFinalize: votingAwaitingFinalize(row),
+          };
+        }
+        const detail = normalizeVotingDetail(state);
+        if (!detail) return row;
+        const merged: VotingRow = {
+          ...row,
+          title: row.title || detail.title || detail.name || row.title,
+          description: row.description || detail.description || row.description,
+          status: detail.status || row.status,
+          endsAt: detail.endsAt ?? detail.settings?.endTime ?? row.endsAt,
+          options: detail.options?.length ? detail.options : row.options,
+        };
+        merged.awaitingFinalize = votingAwaitingFinalize(merged);
+        if (merged.awaitingFinalize && merged.status !== "finished") {
+          merged.status = merged.status === "pending" ? "active" : merged.status;
+        }
+        return merged;
+      } catch {
+        return row;
+      }
+    }),
+  );
+  return enriched;
+}
+
+/**
+ * Votings list: TTL-aware `/list` (getFresh) → refresh → peek last.
+ * Then enrich each row from `votingState:` so status/results match detail.
  */
 export async function loadVotings(dao = DAO_ADDRESS, opts?: { force?: boolean }): Promise<VotingRow[]> {
   const key = `votings:${bounceKey(dao)}`;
 
   if (!opts?.force) {
-    const peeked = await cachePeek(key);
-    const fromPeek = asVotingList(peeked);
-    if (fromPeek.length) return fromPeek;
-
     const cached = await cacheGet<unknown>(key).catch(() => null);
     const fromCache = asVotingList(cached);
-    if (fromCache.length) return fromCache;
+    if (fromCache.length) return enrichVotingsFromState(fromCache);
   }
 
   const refreshed = await cacheRefresh(key, !!opts?.force);
   const fromRefresh = asVotingList(refreshed);
-  if (fromRefresh.length) return fromRefresh;
+  if (fromRefresh.length) return enrichVotingsFromState(fromRefresh);
 
-  // After force refresh miss — still try warm peek (refresh may be HTML/400).
-  const peekedAgain = await cachePeek(key);
-  const fromPeekAgain = asVotingList(peekedAgain);
-  if (fromPeekAgain.length) return fromPeekAgain;
+  // Warm peek only as last resort (may be stale — still better than empty).
+  const peeked = await cachePeek(key);
+  const fromPeek = asVotingList(peeked);
+  if (fromPeek.length) return enrichVotingsFromState(fromPeek);
 
   const again = await cacheGet<unknown>(key).catch(() => null);
-  return asVotingList(again);
+  return enrichVotingsFromState(asVotingList(again));
 }
