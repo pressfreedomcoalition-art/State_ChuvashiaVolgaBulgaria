@@ -125,11 +125,11 @@ URL="${URL%/}"
 printf '%s\n' "$URL" >"$PUBLIC_URL_FILE"
 echo "PUBLIC_URL=${URL}"
 
-# user crontab @reboot (no sudo)
-CRON_LINE="@reboot ${ROOT}/start-user-cache.sh"
-touch "${ROOT}/start-user-cache.sh"
-# start-user-cache.sh is overwritten by deploy; ensure executable wrapper exists below
-( crontab -l 2>/dev/null | grep -v 'start-user-cache.sh' || true; echo "$CRON_LINE" ) | crontab -
+# user crontab: reboot + tunnel refresh (no sudo)
+( crontab -l 2>/dev/null | grep -v 'start-user-cache.sh' | grep -v 'refresh-tunnel.sh' || true
+  echo "@reboot ${ROOT}/start-user-cache.sh"
+  echo "*/25 * * * * ${ROOT}/refresh-tunnel.sh >>${LOGS}/cron-tunnel.log 2>&1"
+) | crontab -
 
 curl -fsS "${URL}/health" || curl -fsS -H "Host: $(echo "$URL" | sed 's|https://||')" "${URL}/health" || true
 echo

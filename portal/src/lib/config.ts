@@ -212,19 +212,25 @@ async function probeCacheHost(url: string): Promise<boolean> {
   }
 }
 
-/** Fetch Pages-hosted cache endpoint; activate only if the host answers. */
+/** Fetch cache endpoint JSON; prefer raw GitHub (updates without Pages rebuild). */
 export async function bootCacheApiFromJson() {
   if (typeof window === "undefined" || isLocalHost()) return;
   let fromJson = "";
-  try {
-    const base = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
-    const res = await fetch(`${base}cache-api.json`, { cache: "no-store" });
-    if (res.ok) {
+  const bust = `t=${Date.now()}`;
+  const sources = [
+    `https://raw.githubusercontent.com/pressfreedomcoalition-art/State_ChuvashiaVolgaBulgaria/main/portal/public/cache-api.json?${bust}`,
+    `${(import.meta.env.BASE_URL || "/").replace(/\/?$/, "/")}cache-api.json?${bust}`,
+  ];
+  for (const src of sources) {
+    try {
+      const res = await fetch(src, { cache: "no-store", credentials: "omit" });
+      if (!res.ok) continue;
       const data = (await res.json()) as { url?: string };
       fromJson = String(data?.url || "").trim();
+      if (fromJson.startsWith("https://")) break;
+    } catch {
+      /* try next */
     }
-  } catch {
-    /* keep bake-time / civic fallback */
   }
   const baked = String(import.meta.env.VITE_CACHE_API || "").trim();
   const candidate = (fromJson.startsWith("https://") ? fromJson : "") || (baked.startsWith("https://") ? baked : "");
@@ -239,6 +245,14 @@ export async function bootCacheApiFromJson() {
   cacheApiSkip = true;
   cacheApiRuntime = "";
   setCivicProxyRuntime("");
+}
+
+/** Re-read tunnel URL while the miniapp stays open (Pinggy free rotates). */
+export function startCacheApiWatch(intervalMs = 8 * 60_000) {
+  if (typeof window === "undefined" || isLocalHost()) return;
+  window.setInterval(() => {
+    void bootCacheApiFromJson();
+  }, intervalMs);
 }
 
 export const CIVIC_API = civicBase();

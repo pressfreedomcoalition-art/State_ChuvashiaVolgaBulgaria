@@ -1,26 +1,23 @@
 name: Deploy CHV cache
 
-# Own VPS as user mish — NO sudo. Frontend stays on GitHub Pages.
-# Cache listens on 127.0.0.1:8790; HTTPS via Pinggy SSH tunnel (not Cloudflare).
+# No sudo: Node in home + Pinggy HTTPS tunnel. Frontend stays on GitHub Pages.
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type OWN_VPS to publish cache-server"
+        description: "OWN_VPS = full install; REFRESH = tunnel URL only"
         required: true
-        default: ""
+        default: "REFRESH"
   schedule:
-    # Free Pinggy tunnels expire ~60m — refresh URL into Pages often
-    - cron: "*/40 * * * *"
+    # Free Pinggy ~60m; GitHub cron drifts — keep tight
+    - cron: "*/20 * * * *"
 
 jobs:
   deploy:
-    if: github.event_name == 'schedule' || github.event.inputs.confirm == 'OWN_VPS'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       actions: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -29,12 +26,13 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.NEW_SSH }}
 
-      - name: Publish user-space cache + HTTPS tunnel
+      - name: Full install or tunnel refresh
         id: pub
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          MODE: ${{ github.event_name == 'schedule' && 'REFRESH' || github.event.inputs.confirm }}
         run: |
           set -euo pipefail
           HOST="${SSH_HOST:?set secret SSH_HOST}"
@@ -42,26 +40,59 @@ jobs:
           PORT="${SSH_PORT:-22}"
           SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          MODE="${MODE:-REFRESH}"
 
           TMP=$(mktemp -d)
           trap 'rm -rf "$TMP"' EXIT
-          tar -cf "$TMP/bundle.tar" \
-            --exclude=node_modules --exclude=data --exclude=.env \
-            -C cache-server .
-          cp deploy/user-cache/install-and-run.sh deploy/user-cache/start-user-cache.sh "$TMP/"
 
-          "${SCP[@]}" "$TMP/bundle.tar" "$TMP/install-and-run.sh" "$TMP/start-user-cache.sh" \
-            "${USER_}@${HOST}:/tmp/"
-
-          "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
-          set -euo pipefail
-          chmod +x /tmp/install-and-run.sh /tmp/start-user-cache.sh
-          mkdir -p "$HOME/chv-cache"
-          cp /tmp/start-user-cache.sh "$HOME/chv-cache/start-user-cache.sh"
-          chmod +x "$HOME/chv-cache/start-user-cache.sh"
-          /tmp/install-and-run.sh /tmp/bundle.tar
-          cat "$HOME/chv-cache/public-url.txt"
-          REMOTE
+          if [[ "$MODE" == "OWN_VPS" ]]; then
+            tar -cf "$TMP/bundle.tar" \
+              --exclude=node_modules --exclude=data --exclude=.env \
+              -C cache-server .
+            cp deploy/user-cache/install-and-run.sh \
+               deploy/user-cache/start-user-cache.sh \
+               deploy/user-cache/refresh-tunnel.sh \
+               "$TMP/"
+            "${SCP[@]}" "$TMP/bundle.tar" "$TMP/install-and-run.sh" \
+              "$TMP/start-user-cache.sh" "$TMP/refresh-tunnel.sh" \
+              "${USER_}@${HOST}:/tmp/"
+            "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+            set -euo pipefail
+            chmod +x /tmp/install-and-run.sh /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh
+            mkdir -p "$HOME/chv-cache"
+            cp /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh "$HOME/chv-cache/"
+            chmod +x "$HOME/chv-cache/start-user-cache.sh" "$HOME/chv-cache/refresh-tunnel.sh"
+            /tmp/install-and-run.sh /tmp/bundle.tar
+            # VPS-local cron: refresh tunnel before Pinggy free expiry (no sudo)
+            ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' || true
+              echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
+              echo "@reboot $HOME/chv-cache/start-user-cache.sh"
+            ) | crontab -
+            cat "$HOME/chv-cache/public-url.txt"
+            REMOTE
+          else
+            # REFRESH / schedule: only tunnel + scripts
+            cp deploy/user-cache/refresh-tunnel.sh deploy/user-cache/start-user-cache.sh "$TMP/"
+            "${SCP[@]}" "$TMP/refresh-tunnel.sh" "$TMP/start-user-cache.sh" \
+              "${USER_}@${HOST}:/tmp/"
+            "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+            set -euo pipefail
+            mkdir -p "$HOME/chv-cache/logs"
+            cp /tmp/refresh-tunnel.sh /tmp/start-user-cache.sh "$HOME/chv-cache/"
+            chmod +x "$HOME/chv-cache/refresh-tunnel.sh" "$HOME/chv-cache/start-user-cache.sh"
+            ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
+              echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
+              echo "@reboot $HOME/chv-cache/start-user-cache.sh"
+            ) | crontab -
+            # ensure node is up
+            if ! curl -fsS --max-time 3 http://127.0.0.1:8790/health >/dev/null 2>&1; then
+              "$HOME/chv-cache/start-user-cache.sh" || true
+              sleep 3
+            fi
+            "$HOME/chv-cache/refresh-tunnel.sh"
+            cat "$HOME/chv-cache/public-url.txt"
+            REMOTE
+          fi
 
           URL=$("${SSH[@]}" "${USER_}@${HOST}" "cat \$HOME/chv-cache/public-url.txt")
           echo "Cache public URL: $URL"
@@ -69,7 +100,7 @@ jobs:
           curl -fsS --max-time 30 "${URL}/health"
           echo
 
-      - name: Publish cache URL for Pages (runtime JSON)
+      - name: Commit cache-api.json (raw.githubusercontent.com — no Pages rebuild needed)
         env:
           CACHE_URL: ${{ steps.pub.outputs.url }}
         run: |
@@ -86,6 +117,4 @@ jobs:
             git push
             echo "Updated portal/public/cache-api.json"
           fi
-          # Best-effort bake-time var (may 403 without admin PAT — runtime JSON is source of truth)
           gh variable set VITE_CACHE_API --repo "${{ github.repository }}" --body "$CACHE_URL" || true
-          gh workflow run pages.yml --repo "${{ github.repository }}" || true

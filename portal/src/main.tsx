@@ -5,7 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import { App } from "./App";
 import { AppStateProvider } from "./state/AppState";
-import { tonConnectManifestUrl, bootCacheApiFromJson, bootCivicMirror } from "./lib/config";
+import { tonConnectManifestUrl, bootCacheApiFromJson, bootCivicMirror, startCacheApiWatch } from "./lib/config";
 import { bootAutoFix } from "./lib/autoFix";
 import { bootBugLog } from "./lib/bugLog";
 import { bootTelegram } from "./lib/telegram";
@@ -34,5 +34,6 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// Prefer Pinggy /civic when live; do not block first paint (E2E + RF UX).
+// Prefer live tunnel when up; do not block first paint. Re-poll as Pinggy free rotates.
 void bootCacheApiFromJson().then(() => bootCivicMirror());
+startCacheApiWatch();
