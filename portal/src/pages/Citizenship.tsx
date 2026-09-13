@@ -66,33 +66,53 @@ export function Citizenship() {
     "";
 
   const civicPaths = useMemo(() => {
+    const metas =
+      pathMetaList.length > 0
+        ? pathMetaList
+        : ([
+            { id: "pay", paramKey: "cit.path.pay", label: tt("pathPay") },
+            { id: "docs", paramKey: "cit.path.docs", label: tt("pathDocs") },
+            { id: "lang", paramKey: "cit.path.lang", label: tt("pathLang") },
+            { id: "wallet", paramKey: "cit.path.wallet", label: tt("pathWallet") },
+          ] satisfies CitizenshipPathMeta[]);
     const list: { id: PathId; title: string; blurb: string }[] = [];
-    for (const m of pathMetaList) {
+    for (const m of metas) {
       const id = m.id as PathId;
       if (id !== "pay" && id !== "docs" && id !== "lang" && id !== "wallet") continue;
       if (!pathEnabled(params, id)) continue;
       let blurb = m.hint || "";
+      let title = m.label;
       if (id === "pay") {
+        title = tt("pathPay");
         blurb = tt("pathPayMin", {
           amount: formatJettonAmount(
             params.get("cit.path.pay.amount")?.numRaw || params.get("cit.path.pay.amount")?.num,
           ),
         });
       } else if (id === "docs") {
+        title = tt("pathDocs");
         blurb = kyc
           ? tt("pathDocsKyc", { fee: kyc.feeFloorUsdt ?? 0, symbol: kyc.defaultFeeSymbol || "USDT" })
           : tt("pathDocsSumsub");
       } else if (id === "lang") {
+        title = tt("pathLang");
         blurb = tt("pathLangQuorum", { n: params.get("cit.path.lang.quorum")?.num ?? "—" });
       } else if (id === "wallet") {
+        title = tt("pathWallet");
         blurb = tt("pathWalletBlurb");
       }
-      list.push({ id, title: m.label, blurb });
+      list.push({ id, title, blurb });
     }
     return list;
   }, [params, kyc, tt, pathMetaList]);
 
-  const tokenMode = civicPaths.length === 0 && !!config?.voteJettonMaster;
+  /** Stake UI only for pure token-DAO (no cit.path.*). Civic CHV always has paths — never stake-as-join. */
+  const hasCitPathParams = useMemo(
+    () => [...params.keys()].some((k) => k.startsWith("cit.path.")),
+    [params],
+  );
+  const tokenMode =
+    !hasCitPathParams && civicPaths.length === 0 && !loading && !!config?.voteJettonMaster;
   const buyUrl = config?.voteJettonMaster ? daoTokenDedustBuyUrl(config.voteJettonMaster) : "";
 
   function openPath(id: PathId) {
@@ -419,7 +439,12 @@ export function Citizenship() {
               onClick={() => openPath(p.id)}
               style={{ textAlign: "left" }}
             >
-              {p.title}
+              <div>{p.title}</div>
+              {p.blurb ? (
+                <div className="muted" style={{ fontSize: 13, fontWeight: 400, marginTop: 4 }}>
+                  {p.blurb}
+                </div>
+              ) : null}
             </button>
           ))}
 

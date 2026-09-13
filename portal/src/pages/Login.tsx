@@ -296,7 +296,6 @@ export function Login() {
             <>
               <h2>{name || tt("citizenship")}</h2>
               <p className="muted">{tt("loginNeedAccessSimple")}</p>
-              <p className="muted" style={{ fontSize: 13 }}>{tt("rfAccessHint")}</p>
               <button
                 className="btn btn-primary btn-wide"
                 disabled={busy}
@@ -307,15 +306,15 @@ export function Login() {
               <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>
                 {tt("connectAndAuthHint")}
               </p>
+              <button className="btn btn-ghost btn-wide" disabled={busy} onClick={() => setStep("phrase")}>
+                {tt("restoreViaKey")}
+              </button>
               {(showLocalFaceId || !hasLocalVault()) && (
                 <button className="btn btn-ghost btn-wide" disabled={busy} onClick={() => void doFaceId()}>
                   {tt("faceIdViaDao")}
                 </button>
               )}
-              <button className="btn btn-ghost btn-wide" disabled={busy} onClick={() => setStep("phrase")}>
-                {tt("restoreViaKey")}
-              </button>
-              <button className="btn btn-ghost btn-wide" disabled={busy} onClick={goJoin}>
+              <button className="btn btn-primary btn-wide" disabled={busy} onClick={goJoin}>
                 {tt("joinDao", { name: name || "DAO" })}
               </button>
               <p className="muted" style={{ marginTop: 12 }}>
