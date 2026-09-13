@@ -144,7 +144,7 @@ async function cachePeek(key: string): Promise<unknown | null> {
 
 /**
  * Overlay live `votingState:` onto list rows (status, endsAt, options/results).
- * Soft TTL on `/list` keeps these fresher than sticky `votings:` peek alone.
+ * Uses peek (fast, no chain rewarm) so the hub is not blocked by soft-TTL refresh.
  */
 export async function enrichVotingsFromState(rows: VotingRow[]): Promise<VotingRow[]> {
   if (!rows.length) return rows;
@@ -153,14 +153,14 @@ export async function enrichVotingsFromState(rows: VotingRow[]): Promise<VotingR
       const addr = votingAddress(row);
       if (!addr) return row;
       try {
-        const state = await cacheGet<VotingState>(`votingState:${addr}`);
-        if (!state) {
+        const raw = await cachePeek(`votingState:${addr}`);
+        if (!raw || typeof raw !== "object") {
           return {
             ...row,
             awaitingFinalize: votingAwaitingFinalize(row),
           };
         }
-        const detail = normalizeVotingDetail(state);
+        const detail = normalizeVotingDetail(raw as VotingState);
         if (!detail) return row;
         const merged: VotingRow = {
           ...row,
@@ -183,6 +183,22 @@ export async function enrichVotingsFromState(rows: VotingRow[]): Promise<VotingR
   return enriched;
 }
 
+async function withEnrichTimeout(rows: VotingRow[], ms = 3_000): Promise<VotingRow[]> {
+  try {
+    return await Promise.race([
+      enrichVotingsFromState(rows),
+      new Promise<VotingRow[]>((resolve) => {
+        setTimeout(
+          () => resolve(rows.map((r) => ({ ...r, awaitingFinalize: votingAwaitingFinalize(r) }))),
+          ms,
+        );
+      }),
+    ]);
+  } catch {
+    return rows;
+  }
+}
+
 /**
  * Votings list: TTL-aware `/list` (getFresh) → refresh → peek last.
  * Then enrich each row from `votingState:` so status/results match detail.
@@ -193,18 +209,18 @@ export async function loadVotings(dao = DAO_ADDRESS, opts?: { force?: boolean })
   if (!opts?.force) {
     const cached = await cacheGet<unknown>(key).catch(() => null);
     const fromCache = asVotingList(cached);
-    if (fromCache.length) return enrichVotingsFromState(fromCache);
+    if (fromCache.length) return withEnrichTimeout(fromCache);
   }
 
   const refreshed = await cacheRefresh(key, !!opts?.force);
   const fromRefresh = asVotingList(refreshed);
-  if (fromRefresh.length) return enrichVotingsFromState(fromRefresh);
+  if (fromRefresh.length) return withEnrichTimeout(fromRefresh);
 
   // Warm peek only as last resort (may be stale — still better than empty).
   const peeked = await cachePeek(key);
   const fromPeek = asVotingList(peeked);
-  if (fromPeek.length) return enrichVotingsFromState(fromPeek);
+  if (fromPeek.length) return withEnrichTimeout(fromPeek);
 
   const again = await cacheGet<unknown>(key).catch(() => null);
-  return enrichVotingsFromState(asVotingList(again));
+  return withEnrichTimeout(asVotingList(again));
 }
