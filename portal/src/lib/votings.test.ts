@@ -21,4 +21,13 @@ describe("normalizeVoting", () => {
     });
     expect(row?.awaitingFinalize).toBe(true);
   });
+
+  it("keeps finished when normalizing", () => {
+    const row = normalizeVoting({
+      address: "EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx",
+      status: "finished",
+    });
+    expect(row?.status).toBe("finished");
+    expect(row?.awaitingFinalize).toBe(false);
+  });
 });

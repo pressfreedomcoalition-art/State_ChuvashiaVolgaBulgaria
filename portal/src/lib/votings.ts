@@ -142,6 +142,15 @@ async function cachePeek(key: string): Promise<unknown | null> {
   return null;
 }
 
+function mergeListStatus(list: VotingRow, detail: VotingState): string {
+  const a = votingStatus(list);
+  const b = votingStatus(detail);
+  // Never downgrade a finished list row (stale votingState often still says "active").
+  if (a === "finished" || b === "finished") return "finished";
+  if (a === "awaiting_finalize" || b === "awaiting_finalize") return detail.status || list.status || "active";
+  return detail.status || list.status || "unknown";
+}
+
 /**
  * Overlay live `votingState:` onto list rows (status, endsAt, options/results).
  * Uses peek (fast, no chain rewarm) so the hub is not blocked by soft-TTL refresh.
@@ -162,18 +171,18 @@ export async function enrichVotingsFromState(rows: VotingRow[]): Promise<VotingR
         }
         const detail = normalizeVotingDetail(raw as VotingState);
         if (!detail) return row;
+        const status = mergeListStatus(row, detail);
         const merged: VotingRow = {
           ...row,
           title: row.title || detail.title || detail.name || row.title,
           description: row.description || detail.description || row.description,
-          status: detail.status || row.status,
+          status,
           endsAt: detail.endsAt ?? detail.settings?.endTime ?? row.endsAt,
           options: detail.options?.length ? detail.options : row.options,
+          notStarted: status === "pending" ? row.notStarted : false,
         };
-        merged.awaitingFinalize = votingAwaitingFinalize(merged);
-        if (merged.awaitingFinalize && merged.status !== "finished") {
-          merged.status = merged.status === "pending" ? "active" : merged.status;
-        }
+        merged.awaitingFinalize =
+          status !== "finished" && (votingAwaitingFinalize(merged) || votingAwaitingFinalize(detail));
         return merged;
       } catch {
         return row;

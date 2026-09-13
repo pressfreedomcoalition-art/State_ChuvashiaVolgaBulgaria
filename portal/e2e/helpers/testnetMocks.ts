@@ -81,13 +81,15 @@ function cacheValue(key: string): unknown {
   if (key.startsWith("containerSides:")) return [E2E_CIVIC, E2E_HUB, E2E_PATH_PAY];
   if (key.startsWith("deputyProfiles:")) return DEPUTIES;
   if (key.startsWith("votingState:") || key.startsWith("votingMeta:")) {
+    const addr = key.slice(key.indexOf(":") + 1);
+    const finished = addr.includes("FinishedVoting");
     return {
-      status: "active",
-      title: "E2E референдум",
-      description: "mock voting",
+      status: finished ? "finished" : "active",
+      title: finished ? "Закон E2E" : "E2E референдум",
+      description: finished ? "passed law mock" : "mock voting",
       options: [
-        { address: E2E_OPT_YES, title: "За", votes: 2 },
-        { address: E2E_OPT_NO, title: "Против", votes: 1 },
+        { address: E2E_OPT_YES, title: "За", votes: finished ? 10 : 2 },
+        { address: E2E_OPT_NO, title: "Против", votes: finished ? 1 : 1 },
       ],
     };
   }
