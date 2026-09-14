@@ -14,6 +14,7 @@ import { resolveWallet } from "../lib/e2eHooks";
 import { ActionError } from "../components/TonConnectRecovery";
 import { DAO_ADDRESS } from "../lib/config";
 import {
+  alignPrivFundCatalogItems,
   catalogContextFromParams,
   filterVotingCatalog,
   loadVotingCatalog,
@@ -21,15 +22,20 @@ import {
   type VotingCatalog,
   type VotingCatalogItem,
 } from "../lib/votingCatalog";
-import { fetchPrivatizationStatus } from "../ton/rpc";
+import { fetchDaoCreator } from "../ton/rpc";
 import {
   loadTreasuryModules,
   modulesForVtype,
   type TreasuryModuleEntry,
 } from "../lib/treasuryModules";
+import { isModuleAllowed } from "../lib/treasuryOps";
+import {
+  fetchPrivFundModuleLive,
+  privFundModuleAddress,
+} from "../ton/privFundModule";
 
 export function CreateReferendum() {
-  const { config, tt, isCitizen, params, citizens } = useApp();
+  const { config, tt, isCitizen, params, paramsList, citizens } = useApp();
   const wallet = resolveWallet(useTonAddress());
   const [ui] = useTonConnectUI();
   const nav = useNavigate();
@@ -38,9 +44,14 @@ export function CreateReferendum() {
 
   const [catalog, setCatalog] = useState<VotingCatalog | null>(null);
   const [treasuryMods, setTreasuryMods] = useState<TreasuryModuleEntry[]>([]);
-  const [privFund, setPrivFund] = useState<{ fund: string | null; live: boolean }>({
+  const [privFund, setPrivFund] = useState<{
+    fund: string | null;
+    live: boolean;
+    moduleBound: boolean;
+  }>({
     fund: null,
     live: false,
+    moduleBound: false,
   });
   const [cat, setCat] = useState<VoteCatId>("decisions");
   const [picked, setPicked] = useState<VotingCatalogItem | null>(null);
@@ -55,15 +66,28 @@ export function CreateReferendum() {
     let cancelled = false;
     void (async () => {
       try {
-        const [{ catalog: catRaw }, priv, treas] = await Promise.all([
+        const [{ catalog: catRaw }, treas, creator] = await Promise.all([
           loadVotingCatalog(),
-          fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
           loadTreasuryModules(DAO_ADDRESS),
+          fetchDaoCreator(DAO_ADDRESS).catch(() => null),
         ]);
         if (cancelled) return;
-        setCatalog(catRaw);
-        setPrivFund(priv);
+        setCatalog(alignPrivFundCatalogItems(catRaw));
         setTreasuryMods(treas.catalog.modules);
+        let fund: string | null = null;
+        let live = false;
+        let moduleBound = false;
+        if (creator) {
+          try {
+            fund = privFundModuleAddress(DAO_ADDRESS, creator);
+            const st = await fetchPrivFundModuleLive(fund);
+            live = !!(st.deployed && st.unlocked);
+            moduleBound = isModuleAllowed(paramsList, fund);
+          } catch {
+            /* ignore */
+          }
+        }
+        setPrivFund({ fund, live, moduleBound });
         setErr("");
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
@@ -72,15 +96,16 @@ export function CreateReferendum() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [paramsList]);
 
   const ctx = useMemo(
     () =>
       catalogContextFromParams(params, {
-        hasPrivFund: !!privFund.fund,
+        privFundOn: privFund.moduleBound || privFund.live,
+        hasPrivFund: !!privFund.fund && (privFund.moduleBound || privFund.live),
         privFundLive: privFund.live,
       }),
-    [params, privFund.fund, privFund.live],
+    [params, privFund.fund, privFund.live, privFund.moduleBound],
   );
 
   const filtered = useMemo(() => {
@@ -162,10 +187,13 @@ export function CreateReferendum() {
     if (item.preset?.hubAppId) next.hubAppId = item.preset.hubAppId;
     if (item.preset?.paramKey) next.paramKey = item.preset.paramKey;
     if (item.preset?.title && !next.title) next.title = item.preset.title;
-    if (item.vtype === 7 && !next.title) next.title = "Разблокировать приватизацию";
+    if (item.id === "priv-activate" && !next.title) next.title = "Активировать фонд приватизации";
+    if (item.id === "priv-stop") {
+      next.modDeny = true;
+      if (!next.title) next.title = "Отклеить фонд приватизации";
+    }
     if (item.vtype === 14 && !next.title) next.title = "Автопополнение казны";
-    if (item.id === "priv-enable" && !next.title) next.title = "Включить приватизацию";
-    if (item.id === "priv-disable" && !next.title) next.title = "Выключить приватизацию";
+    if (item.vtype === 30 && item.id === "priv-activate") next.ensurePrivFund = true;
     setForm(next);
   }
 
@@ -387,21 +415,10 @@ export function CreateReferendum() {
           ) : null}
 
           {vtype === 7 ? (
-            <>
-              <label className="muted">
-                Число граждан (снимок)
-                <input
-                  value={form.citizenCount}
-                  onChange={(e) => patch("citizenCount", e.target.value)}
-                  style={inputStyle}
-                  inputMode="numeric"
-                />
-              </label>
-              <p className="muted">
-                Kind=6 unlock: фиксирует totalCitizens на момент исполнения голоса.
-                {citizens != null ? ` Сейчас в реестре: ${citizens}.` : ""}
-              </p>
-            </>
+            <p style={{ color: "var(--maroon)" }}>
+              Устаревший unlock (kind=6) отключён. Откройте Казна → Фонды и нажмите «Запустить раздачу»
+              (PrivFundModule через mod.exec.forward).
+            </p>
           ) : null}
 
           {vtype === 14 ? (
@@ -742,6 +759,8 @@ function applyQueryPreset(
   const citizens = q.get("citizens") || q.get("citizenCount");
   const topupMode = q.get("topupMode");
   const topupAmount = q.get("topupAmount") || q.get("topup");
+  const body = q.get("body") || q.get("modBodyB64") || q.get("modBody");
+  const ensurePriv = q.get("ensurePrivFund");
 
   if (title) next.title = title;
   const description = q.get("description") || q.get("desc");
@@ -765,6 +784,9 @@ function applyQueryPreset(
   if (modCat === "dexlp" || modCat === "chainwallet" || modCat === "custom" || modCat === "priv_fund" || modCat === "treasury_topup") {
     next.modCatalogId = modCat;
   }
+  if (modCat === "priv-activate" || modCat === "priv-stop" || modCat === "priv-bind" || modCat === "priv-start" || modCat === "priv-pause") {
+    next.modCatalogId = "custom";
+  }
   if (minTon) next.convertMinTon = minTon;
   if (dest) {
     next.modDest = dest;
@@ -776,6 +798,8 @@ function applyQueryPreset(
   if (citizens) next.citizenCount = citizens;
   if (topupMode === "pct" || topupMode === "fixed") next.topupMode = topupMode;
   if (topupAmount) next.topupAmount = topupAmount;
+  if (body) next.modBodyB64 = body;
+  if (ensurePriv === "1" || ensurePriv === "true") next.ensurePrivFund = true;
   if (master && !next.title) next.description = `master ${master}`;
 
   if (vtype === 18 && !next.title) next.title = "Автоконверт казны";
@@ -784,7 +808,6 @@ function applyQueryPreset(
   if (vtype === 30 && !next.title) next.title = next.modDeny ? "Отклеить модуль казны" : "Приклеить модуль казны";
   if (vtype === 31 && !next.title) next.title = "Исполнить на модуле казны";
   if (vtype === 32 && !next.title) next.title = "Выплата USDT TRC-20";
-  if (vtype === 7 && !next.title) next.title = "Разблокировать приватизацию";
   if (vtype === 14 && !next.title) next.title = "Автопополнение казны";
 
   return next;

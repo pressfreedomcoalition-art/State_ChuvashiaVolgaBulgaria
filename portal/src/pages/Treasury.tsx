@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { Address } from "@ton/core";
+import { Link, useNavigate } from "react-router-dom";
+import { Address, beginCell, toNano } from "@ton/core";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
 import { DAO_ADDRESS } from "../lib/config";
@@ -20,12 +20,27 @@ import {
   type ConvertStatus,
   type TreasuryTxRow,
 } from "../lib/treasuryOps";
-import { isPrivFundEnabled, isTopupActive } from "../lib/votingCatalog";
+import { isTopupActive } from "../lib/votingCatalog";
 import { claimPrivatizationShare } from "../lib/civicActions";
 import { loadCabinetCatalog, type CabinetSection } from "../lib/cabinetCatalog";
-import { fetchDaoCreator, fetchPrivatizationStatus } from "../ton/rpc";
+import { fetchDaoCreator } from "../ton/rpc";
 import { ActionError, isTonConnectFail } from "../components/TonConnectRecovery";
 import { hasLocalVault } from "../lib/passport";
+import { resolveJettonWallet } from "../lib/tonResolve";
+import { toJettonUnits } from "../ton/coins";
+import {
+  buildBindJettonWalletBody,
+  buildPausePrivBody,
+  buildUnlockPrivBody,
+  ensurePrivFundDeployed,
+  fetchPrivFundClaimed,
+  fetchPrivFundModuleLive,
+  privFundDeployedForDao,
+  privFundModuleAddress,
+  type PrivFundLive,
+} from "../ton/privFundModule";
+
+const OP_JETTON_TRANSFER = 0x0f8a7ea5;
 
 type Sub = string;
 
@@ -38,9 +53,10 @@ function createHref(vtype: number, extra: Record<string, string | undefined> = {
 }
 
 export function Treasury() {
-  const { tt, treasury, loading, refresh, params, paramsList, config, wallet: appWallet } = useApp();
+  const { tt, treasury, loading, refresh, params, paramsList, config, wallet: appWallet, citizens } = useApp();
   const wallet = useTonAddress() || appWallet;
   const [ui] = useTonConnectUI();
+  const nav = useNavigate();
   const [sub, setSub] = useState<Sub>("hub");
   const [sections, setSections] = useState<CabinetSection[]>([]);
   const [catalogErr, setCatalogErr] = useState("");
@@ -51,14 +67,14 @@ export function Treasury() {
   const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
   const [deployMsg, setDeployMsg] = useState("");
   const deployRetryRef = useRef<null | (() => void)>(null);
-  /** DexLP guardian = DAO creator (same as dao.blc.cab), not the visitor wallet. */
+  /** DexLP / PrivFund guardian = DAO creator (same as dao.blc.cab). */
   const [guardian, setGuardian] = useState("");
-  const [privStatus, setPrivStatus] = useState<{ fund: string | null; live: boolean }>({
-    fund: null,
-    live: false,
-  });
+  const [privLive, setPrivLive] = useState<PrivFundLive | null>(null);
+  const [privClaimed, setPrivClaimed] = useState<boolean | null>(null);
+  const [depositAmt, setDepositAmt] = useState("");
   const [privMsg, setPrivMsg] = useState("");
   const [privErr, setPrivErr] = useState("");
+  const [copiedFund, setCopiedFund] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +104,6 @@ export function Treasury() {
   const convertParam = params.get(FUND_CONVERT_TON_MIN_PARAM);
   const convertOn = isFundConvertEnabled(convertParam);
   const convertMinTon = nanoToTon(Number(convertParam?.numRaw ?? convertParam?.num ?? 0));
-  const privFundOn = isPrivFundEnabled(params);
   const topupOn = isTopupActive(params);
 
   const chainAddr = useMemo(() => {
@@ -108,27 +123,60 @@ export function Treasury() {
     }
   }, [guardian]);
 
+  const privFundAddr = useMemo(() => {
+    if (!guardian) return "";
+    try {
+      return privFundModuleAddress(DAO_ADDRESS, guardian);
+    } catch {
+      return "";
+    }
+  }, [guardian]);
+
   const chainAllowed = chainAddr ? isModuleAllowed(paramsList, chainAddr) : false;
   const dexAllowed = dexAddr ? isModuleAllowed(paramsList, dexAddr) : false;
+  const moduleBound = privFundAddr ? isModuleAllowed(paramsList, privFundAddr) : false;
+  const deployed = privFundDeployedForDao(privLive, DAO_ADDRESS);
+  const walletBound = !!(privLive?.wallet);
+  const unlocked = deployed ? !!privLive?.unlocked : false;
+  const amGuardian = !!(wallet && guardian && sameMaster(wallet, guardian));
+  const voteMaster = config?.voteJettonMaster || "";
+  const fundsOpen = moduleBound || unlocked;
 
   const loadExtra = useCallback(async () => {
-    const [st, hist, creator, priv] = await Promise.all([
+    const creator = await fetchDaoCreator(DAO_ADDRESS).catch(() => null);
+    if (creator) setGuardian(creator);
+    const fundAddr =
+      creator
+        ? (() => {
+            try {
+              return privFundModuleAddress(DAO_ADDRESS, creator);
+            } catch {
+              return "";
+            }
+          })()
+        : "";
+
+    const [st, hist, live, claimed] = await Promise.all([
       fetchConvertStatus(DAO_ADDRESS).catch(() => null),
-      sub === "txHistory" ? fetchTreasuryTxHistory(DAO_ADDRESS).catch((e) => {
-        setTxErr(e instanceof Error ? e.message : String(e));
-        return null;
-      }) : Promise.resolve(null),
-      fetchDaoCreator(DAO_ADDRESS).catch(() => null),
-      fetchPrivatizationStatus(DAO_ADDRESS).catch(() => ({ fund: null, live: false })),
+      sub === "txHistory"
+        ? fetchTreasuryTxHistory(DAO_ADDRESS).catch((e) => {
+            setTxErr(e instanceof Error ? e.message : String(e));
+            return null;
+          })
+        : Promise.resolve(null),
+      fundAddr ? fetchPrivFundModuleLive(fundAddr).catch(() => null) : Promise.resolve(null),
+      fundAddr && wallet
+        ? fetchPrivFundClaimed(fundAddr, wallet).catch(() => null)
+        : Promise.resolve(null),
     ]);
     setConvertStatus(st);
-    if (creator) setGuardian(creator);
-    setPrivStatus(priv);
+    setPrivLive(live);
+    setPrivClaimed(claimed);
     if (hist) {
       setTxRows(hist);
       setTxErr("");
     }
-  }, [sub]);
+  }, [sub, wallet]);
 
   useEffect(() => {
     void loadExtra();
@@ -184,12 +232,169 @@ export function Treasury() {
     }
   }
 
+  async function advancePriv() {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    const g = guardian || (await fetchDaoCreator(DAO_ADDRESS).catch(() => null));
+    if (!g) {
+      setPrivErr("Не удалось прочитать creator ДАО (guardian фонда).");
+      return;
+    }
+    if (!guardian) setGuardian(g);
+    const fundAddr = privFundModuleAddress(DAO_ADDRESS, g);
+    setBusy(true);
+    setPrivMsg("");
+    setPrivErr("");
+    try {
+      if (!moduleBound) {
+        setPrivMsg("Деплой PrivFundModule…");
+        let bindJw: string | undefined;
+        if (voteMaster && amGuardian) {
+          try {
+            bindJw = await resolveJettonWallet(voteMaster, fundAddr);
+          } catch {
+            /* optional */
+          }
+        }
+        await ensurePrivFundDeployed({
+          dao: DAO_ADDRESS,
+          guardian: g,
+          sendTransaction: (tx) => ui.sendTransaction(tx as never),
+          bindWallet: bindJw,
+        });
+        await loadExtra();
+        setPrivMsg("Модуль готов — создайте голос приклейки.");
+        nav(
+          createHref(30, {
+            item: "priv-activate",
+            module: fundAddr,
+            modCatalogId: "custom",
+            ensurePrivFund: "1",
+            title: "Активировать фонд приватизации",
+          }),
+        );
+        return;
+      }
+
+      if (!walletBound) {
+        if (!voteMaster) {
+          setPrivErr("Нет vote jetton master в конфиге ДАО.");
+          return;
+        }
+        const jw = await resolveJettonWallet(voteMaster, fundAddr);
+        if (amGuardian) {
+          await ui.sendTransaction({
+            validUntil: Math.floor(Date.now() / 1000) + 600,
+            messages: [
+              {
+                address: fundAddr,
+                amount: toNano("0.05").toString(),
+                payload: buildBindJettonWalletBody(jw).toBoc().toString("base64"),
+              },
+            ],
+          });
+          setPrivMsg("Jetton-кошелёк привязан.");
+          await loadExtra();
+          return;
+        }
+        nav(
+          createHref(31, {
+            item: "priv-bind",
+            module: fundAddr,
+            modCatalogId: "custom",
+            exec: "forward",
+            dest: fundAddr,
+            body: buildBindJettonWalletBody(jw).toBoc().toString("base64"),
+            ensurePrivFund: "1",
+            title: "Привязать jetton-кошелёк фонда",
+          }),
+        );
+        return;
+      }
+
+      const n = citizens != null && citizens > 0 ? citizens : 0;
+      if (!(n > 0)) {
+        setPrivErr("Нужно число граждан (> 0) для запуска раздачи.");
+        return;
+      }
+      nav(
+        createHref(31, {
+          item: "priv-start",
+          module: fundAddr,
+          modCatalogId: "custom",
+          exec: "forward",
+          dest: fundAddr,
+          body: buildUnlockPrivBody(n).toBoc().toString("base64"),
+          ensurePrivFund: "1",
+          title: unlocked ? "Новый раунд приватизации" : "Запустить раздачу приватизации",
+        }),
+      );
+    } catch (e) {
+      setPrivErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDepositPriv() {
+    if (!wallet) {
+      ui.openModal();
+      return;
+    }
+    if (!privFundAddr || !voteMaster) {
+      setPrivErr("Нет адреса фонда или vote jetton.");
+      return;
+    }
+    const amount = Number(String(depositAmt).replace(",", "."));
+    if (!(amount > 0)) {
+      setPrivErr("Укажите сумму депозита.");
+      return;
+    }
+    setBusy(true);
+    setPrivMsg("");
+    setPrivErr("");
+    try {
+      const decimals = 9;
+      const userWallet = await resolveJettonWallet(voteMaster, wallet);
+      const amountNano = toJettonUnits(amount, decimals);
+      const body = beginCell()
+        .storeUint(OP_JETTON_TRANSFER, 32)
+        .storeUint(0, 64)
+        .storeCoins(amountNano)
+        .storeAddress(Address.parse(privFundAddr))
+        .storeAddress(Address.parse(wallet))
+        .storeBit(false)
+        .storeCoins(toNano("0.05"))
+        .storeBit(false)
+        .endCell();
+      await ui.sendTransaction({
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [
+          {
+            address: userWallet,
+            amount: toNano("0.08").toString(),
+            payload: body.toBoc().toString("base64"),
+          },
+        ],
+      });
+      setDepositAmt("");
+      setPrivMsg("Депозит отправлен.");
+      await loadExtra();
+    } catch (e) {
+      setPrivErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onClaimPriv() {
     if (!wallet) {
       ui.openModal();
       return;
     }
-    if (!privStatus.fund) return;
+    if (!privFundAddr || !unlocked) return;
     setBusy(true);
     setPrivMsg("");
     setPrivErr("");
@@ -197,9 +402,10 @@ export function Treasury() {
       await claimPrivatizationShare({
         tonConnectUI: ui,
         wallet,
-        fund: privStatus.fund,
+        fund: privFundAddr,
       });
       setPrivMsg(tt("fundsClaimSent"));
+      await loadExtra();
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       if (/claimed/i.test(m)) setPrivErr(tt("fundsAlreadyClaimed"));
@@ -207,6 +413,20 @@ export function Treasury() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function privStatusText() {
+    if (!guardian) return "Читаем creator ДАО…";
+    if (!moduleBound) return "Фонд не приклеен. Любой кошелёк может задеплоить модуль и создать голос активации.";
+    if (!walletBound) return "Модуль приклеен — нужна привязка jetton-кошелька фонда.";
+    if (!unlocked) return "Кошелёк привязан — пополните фонд и запустите раздачу голосом.";
+    return "Раздача активна — граждане могут забрать долю.";
+  }
+
+  function primaryPrivLabel() {
+    if (!moduleBound) return "＋ Активировать фонд";
+    if (!walletBound) return amGuardian ? "Привязать jetton-кошелёк" : "Голос: привязать кошелёк";
+    return unlocked ? "Новый раунд" : "Запустить раздачу";
   }
 
   return (
@@ -237,7 +457,7 @@ export function Treasury() {
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
             {sections.map((s) => {
               let suffix = "";
-              if (s.id === "funds" && (privFundOn || topupOn)) suffix = " · вкл";
+              if (s.id === "funds" && (fundsOpen || topupOn)) suffix = " · вкл";
               if (s.id === "convert") {
                 suffix = convertOn ? ` · ≥${trimNum(convertMinTon)} TON` : " · выкл";
               }
@@ -323,59 +543,103 @@ export function Treasury() {
         <div className="card stack">
           <h3 style={{ margin: 0 }}>Приватизация</h3>
           <p className="muted" style={{ margin: 0 }}>
-            {!privFundOn
-              ? "Модуль выключен (нет hub.on.priv_fund)."
-              : privStatus.live
-                ? "Фонд разблокирован — приватизация активна."
-                : privStatus.fund
-                  ? "Модуль включён, фонд задеплоен — нужна разблокировка (vtype 7)."
-                  : "Модуль включён — дождитесь деплоя child-контракта фонда."}
+            {privStatusText()}
           </p>
+          {privFundAddr ? (
+            <p style={{ margin: 0, wordBreak: "break-all" }}>
+              PrivFundModule: <code>{shortAddr(privFundAddr, 10, 8)}</code>
+              {" · "}
+              {moduleBound ? <span style={{ color: "var(--ok)" }}>приклеен</span> : <span>не приклеен</span>}
+              {deployed ? ` · баланс ${trimNum((privLive?.balance ?? 0) / 1e9)}` : null}
+              {unlocked ? " · раздача" : null}
+            </p>
+          ) : null}
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-            {!privFundOn ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || (!moduleBound ? false : !walletBound && !voteMaster)}
+              onClick={() => void advancePriv()}
+            >
+              {primaryPrivLabel()}
+            </button>
+            {moduleBound ? (
               <Link
-                className="btn btn-primary"
-                to={createHref(11, {
-                  item: "priv-enable",
-                  hubAppMode: "enable",
-                  hubAppId: "priv_fund",
-                  title: "Включить приватизацию",
+                className="btn btn-ghost"
+                to={createHref(30, {
+                  item: "priv-stop",
+                  module: privFundAddr,
+                  modCatalogId: "custom",
+                  deny: "1",
+                  ensurePrivFund: "1",
+                  title: "Отклеить фонд приватизации",
                 })}
               >
-                Включить приватизацию
+                Отклеить
               </Link>
-            ) : (
-              <>
-                {privStatus.fund && !privStatus.live ? (
-                  <Link className="btn btn-primary" to={createHref(7, { item: "priv-unlock", title: "Разблокировать приватизацию" })}>
-                    Разблокировать
-                  </Link>
-                ) : null}
-                {privStatus.live && privStatus.fund ? (
-                  <button
-                    className="btn btn-primary"
-                    disabled={busy || !wallet || !hasLocalVault()}
-                    data-testid="priv-claim"
-                    onClick={() => void onClaimPriv()}
-                  >
-                    {tt("fundsClaimShare")}
-                  </button>
-                ) : null}
-                <Link
-                  className="btn btn-ghost"
-                  to={createHref(11, {
-                    item: "priv-disable",
-                    hubAppMode: "disable",
-                    hubAppId: "priv_fund",
-                    title: "Выключить приватизацию",
-                  })}
-                >
-                  Выключить
-                </Link>
-              </>
-            )}
+            ) : null}
+            {moduleBound && unlocked ? (
+              <Link
+                className="btn btn-ghost"
+                to={createHref(31, {
+                  item: "priv-pause",
+                  module: privFundAddr,
+                  modCatalogId: "custom",
+                  exec: "forward",
+                  dest: privFundAddr,
+                  body: buildPausePrivBody().toBoc().toString("base64"),
+                  ensurePrivFund: "1",
+                  title: "Пауза раздачи",
+                })}
+              >
+                Пауза
+              </Link>
+            ) : null}
+            {unlocked && privFundAddr ? (
+              <button
+                className="btn btn-primary"
+                disabled={busy || !wallet || !hasLocalVault() || privClaimed === true}
+                data-testid="priv-claim"
+                onClick={() => void onClaimPriv()}
+              >
+                {privClaimed ? tt("fundsAlreadyClaimed") : tt("fundsClaimShare")}
+              </button>
+            ) : null}
           </div>
-          {privStatus.live ? <p className="muted" style={{ margin: 0 }}>{tt("fundsClaimHint")}</p> : null}
+          {moduleBound && walletBound ? (
+            <div className="stack" style={{ gap: 6 }}>
+              <p className="muted" style={{ margin: 0 }}>
+                Пополните фонд jetton’ом ДАО, затем запустите раздачу.
+              </p>
+              <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(privFundAddr);
+                    setCopiedFund(true);
+                    setTimeout(() => setCopiedFund(false), 1500);
+                  }}
+                >
+                  {copiedFund ? tt("copied") : "Копировать адрес фонда"}
+                </button>
+              </div>
+              <label>
+                Сумма депозита
+                <input
+                  value={depositAmt}
+                  inputMode="decimal"
+                  placeholder="0"
+                  onChange={(e) => setDepositAmt(e.target.value)}
+                  style={{ display: "block", width: "100%", marginTop: 4, padding: 10, borderRadius: 10, border: "1px solid var(--line)", boxSizing: "border-box" }}
+                />
+              </label>
+              <button type="button" className="btn btn-ghost" disabled={busy || !wallet} onClick={() => void onDepositPriv()}>
+                Пополнить фонд
+              </button>
+            </div>
+          ) : null}
+          {unlocked ? <p className="muted" style={{ margin: 0 }}>{tt("fundsClaimHint")}</p> : null}
           {privMsg ? <p style={{ color: "var(--ok)", margin: 0 }}>{privMsg}</p> : null}
           {privErr ? <p style={{ color: "var(--maroon)", margin: 0 }}>{privErr}</p> : null}
 

@@ -143,7 +143,7 @@
 |---|----------|-------------|------|-----|
 | 9.1 | Пополнить личный счёт комиссии | Комиссии → сумма → Пополнить | `/gas/ticket` + TON **S+W** → `/claim` | `gasPers` C |
 | 9.2 | Пул ДАО | тот же путь (DAO) | `/gas/dao/ticket` + claim | `gasDao` C |
-| 9.3 | Claim приватизации | Фонды → Claim | `/funds/claim-privatization` + TX **S+W** | `fundSnap` C |
+| 9.3 | Приватизация | Казна → Фонды → «＋ Активировать» → allow → bind → депозит → «Запустить раздачу» → Claim | PrivFundModule deploy **W** + голоса 30/31 + `/funds/claim-privatization` **S+W** | params / live module |
 | 9.4 | Push liberation/topup | Push | fund opcode **W** | `fundSnap` C |
 | 9.5 | DEX LP deploy / return | DEX → Deploy / Return | vault **W** | `dexLp`, `treasuryJettons` C |
 

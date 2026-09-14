@@ -30,10 +30,16 @@ import {
 import { prepareVoting } from "../ton/prepareVoting";
 import {
   fetchCivicSource,
+  fetchDaoCreator,
   fetchDaoVersion,
   fetchDaoVotingSeqno,
   fetchVoteJettonWallet,
 } from "../ton/rpc";
+import { resolveJettonWallet } from "./tonResolve";
+import {
+  ensurePrivFundDeployed,
+  privFundModuleAddress,
+} from "../ton/privFundModule";
 import { createDurationSec, voteSettingsFloorsFromConfig, type VoteSettingsFloors } from "../ton/voteFloors";
 import type { DaoConfig } from "../lib/civic";
 import { E2E_MOCK_VOTING, isE2eTestnet } from "../lib/e2eHooks";
@@ -118,6 +124,8 @@ export type CreateForm = {
   /** hub app enable/disable (11) */
   hubAppMode: "" | "enable" | "disable";
   hubAppId: string;
+  /** Auto-deploy PrivFundModule before packing vtype 30/31. */
+  ensurePrivFund: boolean;
 };
 
 export function defaultCreateForm(floors: VoteSettingsFloors): CreateForm {
@@ -157,6 +165,7 @@ export function defaultCreateForm(floors: VoteSettingsFloors): CreateForm {
     topupAmount: "1",
     hubAppMode: "",
     hubAppId: "",
+    ensurePrivFund: false,
   };
 }
 
@@ -224,13 +233,9 @@ async function buildAction(
   }
 
   if (vtype === 7) {
-    const n = Math.trunc(Number(form.citizenCount) || 0);
-    if (!(n > 0)) throw new Error("Укажите число граждан (> 0)");
-    return {
-      kind: 6,
-      param: { key: "totalCitizens", isString: false, num: n },
-      approveIndex: 0,
-    };
+    throw new Error(
+      "Устаревший unlock (kind=6). Запускайте раздачу через PrivFundModule: казна → Фонды → «Запустить раздачу».",
+    );
   }
 
   if (vtype === 11) {
@@ -482,6 +487,37 @@ export async function submitCreateVoting(opts: {
     fetchVoteJettonWallet(DAO_ADDRESS),
   ]);
 
+  let form = { ...opts.form };
+  if (form.ensurePrivFund && (opts.vtype === 30 || opts.vtype === 31)) {
+    const creator = await fetchDaoCreator(DAO_ADDRESS);
+    if (!creator) throw new Error("Не удалось прочитать creator ДАО для PrivFundModule");
+    let bindJw: string | undefined;
+    const master = opts.config?.voteJettonMaster;
+    if (master) {
+      try {
+        const same = Address.parse(opts.wallet).equals(Address.parse(creator));
+        if (same) {
+          const pred = privFundModuleAddress(DAO_ADDRESS, creator);
+          bindJw = await resolveJettonWallet(master, pred);
+        }
+      } catch {
+        /* optional */
+      }
+    }
+    const { address: fundAddr } = await ensurePrivFundDeployed({
+      dao: DAO_ADDRESS,
+      guardian: creator,
+      sendTransaction: (tx) => opts.ui.sendTransaction(tx as never),
+      bindWallet: bindJw,
+    });
+    form = {
+      ...form,
+      moduleAddr: fundAddr,
+      modDest: form.modDest.trim() || (opts.vtype === 31 ? fundAddr : form.modDest),
+      modCatalogId: form.modCatalogId || "custom",
+    };
+  }
+
   const version = (versionRaw >= 6 ? 6 : versionRaw >= 5 ? 5 : 4) as DaoVersion;
   if (version >= 6 && seqno == null) throw new Error("Не удалось прочитать votingSeqno контейнера");
 
@@ -489,15 +525,15 @@ export async function submitCreateVoting(opts: {
   if (!weightSource) throw new Error("Нет источника голоса (weight source) у контейнера");
 
   const settings: VoteSettingsInput = {
-    endTimeSec: createDurationSec(opts.form.durationHours, floors),
+    endTimeSec: createDurationSec(form.durationHours, floors),
     minAmount: 0,
-    quorum: Math.max(floors.quorum, Math.floor(Number(opts.form.quorum) || 0)),
-    supportPct: clampPct(opts.form.supportPct, floors.supportPct, 99),
-    turnoutPct: clampPct(opts.form.turnoutPct, floors.turnoutPct, 100),
+    quorum: Math.max(floors.quorum, Math.floor(Number(form.quorum) || 0)),
+    supportPct: clampPct(form.supportPct, floors.supportPct, 99),
+    turnoutPct: clampPct(form.turnoutPct, floors.turnoutPct, 100),
     totalSupply: 0,
   };
 
-  const baseAction = await buildAction(opts.vtype, opts.form, opts.config, treasuryWallet);
+  const baseAction = await buildAction(opts.vtype, form, opts.config, treasuryWallet);
   const options =
     opts.vtype === 0
       ? []
@@ -506,7 +542,7 @@ export async function submitCreateVoting(opts: {
           { title: REJECT_OPTION.title, description: REJECT_OPTION.description },
         ];
 
-  let description = opts.form.description.trim();
+  let description = form.description.trim();
   if (!description && baseAction.kind === 4 && baseAction.param?.key) {
     description = `Параметр ${baseAction.param.key}`;
   }
@@ -514,7 +550,7 @@ export async function submitCreateVoting(opts: {
   const prepared = await prepareVoting({
     container: DAO_ADDRESS,
     creator: opts.wallet,
-    title,
+    title: form.title.trim().length >= 3 ? form.title.trim() : title,
     description,
     settings,
     options,
@@ -529,7 +565,7 @@ export async function submitCreateVoting(opts: {
 
   const decisionOpts =
     opts.vtype === 0
-      ? opts.form.decisionOpts.map((s) => s.trim()).filter(Boolean).slice(0, 8)
+      ? form.decisionOpts.map((s) => s.trim()).filter(Boolean).slice(0, 8)
       : [APPROVE_OPTION.title, REJECT_OPTION.title];
 
   try {

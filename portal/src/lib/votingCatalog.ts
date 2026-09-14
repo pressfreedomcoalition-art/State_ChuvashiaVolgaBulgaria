@@ -74,6 +74,36 @@ export function isPrivFundEnabled(params: Map<string, DaoParam> | DaoParam[]): b
   return isHubItemEnabled(params, "priv_fund");
 }
 
+/** Strip legacy hub.on / kind=6 priv items and inject PrivFundModule CTAs (align with dao.blc.cab). */
+export function alignPrivFundCatalogItems(catalog: VotingCatalog): VotingCatalog {
+  const drop = new Set(["priv-enable", "priv-unlock", "priv-disable"]);
+  const items = catalog.items.filter((i) => !drop.has(i.id) && !(i.category === "funds" && i.vtype === 7));
+  const hasActivate = items.some((i) => i.id === "priv-activate");
+  if (!hasActivate) {
+    items.push(
+      {
+        id: "priv-activate",
+        vtype: 30,
+        category: "funds",
+        label: "Приватизация — активировать фонд",
+        hint: "деплой PrivFundModule · mod.allow",
+        require: { privFundOn: false },
+        preset: { title: "Активировать фонд приватизации" },
+      },
+      {
+        id: "priv-stop",
+        vtype: 30,
+        category: "funds",
+        label: "Приватизация — отклеить фонд",
+        hint: "mod.deny · PrivFundModule",
+        require: { privFundOn: true },
+        preset: { title: "Отклеить фонд приватизации" },
+      },
+    );
+  }
+  return { ...catalog, items };
+}
+
 export function isTopupActive(params: Map<string, DaoParam> | DaoParam[]): boolean {
   const get = (key: string) =>
     Array.isArray(params) ? params.find((x) => x.key === key) : params.get(key);
@@ -155,10 +185,10 @@ export function filterVotingCatalog(
 
 export function catalogContextFromParams(
   params: Map<string, DaoParam>,
-  extra?: Partial<Pick<VotingCatalogContext, "hasPrivFund" | "privFundLive">>,
+  extra?: Partial<Pick<VotingCatalogContext, "hasPrivFund" | "privFundLive" | "privFundOn">>,
 ): VotingCatalogContext {
   return {
-    privFundOn: isPrivFundEnabled(params),
+    privFundOn: extra?.privFundOn ?? isPrivFundEnabled(params),
     hasPrivFund: !!extra?.hasPrivFund,
     privFundLive: !!extra?.privFundLive,
     topupActive: isTopupActive(params),
@@ -185,5 +215,5 @@ export async function loadVotingCatalog(): Promise<{ catalog: VotingCatalog; sou
   const j = await civicGet<unknown>("/v1/platform/voting-catalog");
   const cat = normalizeCatalog(j);
   if (!cat) throw new Error("voting_catalog_unavailable");
-  return { catalog: cat, source: "api" };
+  return { catalog: alignPrivFundCatalogItems(cat), source: "api" };
 }

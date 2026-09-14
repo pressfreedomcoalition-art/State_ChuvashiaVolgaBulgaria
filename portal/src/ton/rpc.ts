@@ -7,7 +7,7 @@ const ORBS =
 
 type StackAny = Array<[string, { bytes?: string; num?: string } | string | number]>;
 
-async function tcRun(address: string, method: string, stack: unknown[] = []) {
+export async function tcRun(address: string, method: string, stack: unknown[] = []) {
   const res = await fetch(ORBS, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -185,7 +185,10 @@ export async function fetchVotingHasVoted(voting: string, voter: string): Promis
   return null;
 }
 
-/** Privatization child + unlocked flag (`get_privatization_fund` / `get_unlocked`). */
+/**
+ * @deprecated Legacy embedded ContractPrivatizationFund.
+ * Prefer PrivFundModule via `privFundModuleAddress` + `fetchPrivFundModuleLive`.
+ */
 export async function fetchPrivatizationStatus(container: string): Promise<{
   fund: string | null;
   live: boolean;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignPrivFundCatalogItems,
   filterVotingCatalog,
   isPrivFundEnabled,
   isTopupActive,
@@ -65,8 +66,17 @@ const FIXTURE: VotingCatalog = {
 };
 
 describe("votingCatalog", () => {
-  it("shows privatization enable when hub.off", () => {
-    const { items } = filterVotingCatalog(FIXTURE, {
+  it("aligns legacy priv items to PrivFundModule activate/stop", () => {
+    const aligned = alignPrivFundCatalogItems(FIXTURE);
+    expect(aligned.items.some((i) => i.id === "priv-enable")).toBe(false);
+    expect(aligned.items.some((i) => i.id === "priv-unlock")).toBe(false);
+    expect(aligned.items.some((i) => i.id === "priv-activate")).toBe(true);
+    expect(aligned.items.some((i) => i.id === "priv-stop")).toBe(true);
+  });
+
+  it("shows privatization activate when module not attached", () => {
+    const aligned = alignPrivFundCatalogItems(FIXTURE);
+    const { items } = filterVotingCatalog(aligned, {
       privFundOn: false,
       hasPrivFund: false,
       privFundLive: false,
@@ -74,14 +84,15 @@ describe("votingCatalog", () => {
       banByVote: false,
       nftPassOpen: false,
     });
-    expect(items.some((i) => i.id === "priv-enable")).toBe(true);
+    expect(items.some((i) => i.id === "priv-activate")).toBe(true);
     expect(items.some((i) => i.id === "priv-unlock")).toBe(false);
     expect(items.some((i) => i.id === "topup-create")).toBe(true);
     expect(items.some((i) => i.category === "funds")).toBe(true);
   });
 
-  it("shows unlock when fund deployed but locked", () => {
-    const { items } = filterVotingCatalog(FIXTURE, {
+  it("shows stop when module attached; hides activate", () => {
+    const aligned = alignPrivFundCatalogItems(FIXTURE);
+    const { items } = filterVotingCatalog(aligned, {
       privFundOn: true,
       hasPrivFund: true,
       privFundLive: false,
@@ -89,9 +100,8 @@ describe("votingCatalog", () => {
       banByVote: true,
       nftPassOpen: true,
     });
-    expect(items.some((i) => i.id === "priv-enable")).toBe(false);
-    expect(items.some((i) => i.id === "priv-unlock")).toBe(true);
-    expect(items.some((i) => i.id === "priv-disable")).toBe(true);
+    expect(items.some((i) => i.id === "priv-activate")).toBe(false);
+    expect(items.some((i) => i.id === "priv-stop")).toBe(true);
     expect(items.some((i) => i.id === "topup-create")).toBe(false);
     expect(items.some((i) => i.id === "ban-citizen")).toBe(true);
     expect(items.some((i) => i.id === "nft-pass-open")).toBe(false);
