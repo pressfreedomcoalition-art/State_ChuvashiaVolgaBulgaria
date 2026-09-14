@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../state/AppState";
-import { endsAtMs, votingAddress, votingAwaitingFinalize, votingStatus } from "../lib/civic";
+import { endsAtMs, votingAddress, votingDeadlineKind, votingDisplayStatus } from "../lib/civic";
 import { formatDateTime } from "../lib/format";
 
 const LIST_POLL_MS = 45_000;
-
-function listStatus(v: Parameters<typeof votingStatus>[0]) {
-  if (votingAwaitingFinalize(v)) return "awaiting_finalize" as const;
-  return votingStatus(v);
-}
 
 export function Referendums() {
   const { tt, votings, loading, refresh, error } = useApp();
@@ -65,11 +60,20 @@ export function Referendums() {
       ) : null}
       {votings.map((v) => {
         const addr = votingAddress(v);
-        const st = listStatus(v);
+        const st = votingDisplayStatus(v);
         const endMs = endsAtMs(v);
         const endLabel = endMs ? formatDateTime(endMs) : "";
+        const deadlineKind = votingDeadlineKind(v);
         const opts = (v.options || []).filter((o) => o.title || o.text || o.address);
         const showOutcome = (st === "finished" || st === "awaiting_finalize") && opts.length > 0;
+        const deadlineCaption =
+          endLabel && deadlineKind
+            ? deadlineKind === "ended"
+              ? tt("endedAt", { when: endLabel })
+              : deadlineKind === "expired"
+                ? tt("expiredAt", { when: endLabel })
+                : tt("endsAt", { when: endLabel })
+            : "";
         return (
           <article key={addr || v.title} className="card" data-testid="voting-card">
             <span className={`badge ${st === "finished" ? "badge-ok" : "badge-run"}`}>
@@ -81,11 +85,9 @@ export function Referendums() {
                     ? tt("votingAwaitFinalize")
                     : tt("votingOpen")}
             </span>
-            {endLabel ? (
+            {deadlineCaption ? (
               <p className="muted" style={{ margin: "8px 0 0" }}>
-                {st === "finished" || st === "awaiting_finalize"
-                  ? tt("endedAt", { when: endLabel })
-                  : tt("endsAt", { when: endLabel })}
+                {deadlineCaption}
               </p>
             ) : null}
             <h3 style={{ margin: "10px 0 8px" }}>{v.title || addr}</h3>
@@ -107,7 +109,7 @@ export function Referendums() {
               </ul>
             ) : null}
             <Link className="btn btn-primary" to={`/referendums/${encodeURIComponent(addr)}`}>
-              {st === "finished" ? tt("results") : st === "awaiting_finalize" ? tt("results") : tt("vote")}
+              {st === "finished" || st === "awaiting_finalize" ? tt("results") : tt("vote")}
             </Link>
           </article>
         );

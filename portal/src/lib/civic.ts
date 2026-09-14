@@ -273,6 +273,33 @@ export function votingAwaitingFinalize(row: VotingRow | VotingState | null | und
   return end != null && Date.now() >= end;
 }
 
+/**
+ * UI status: time expiry wins over cached "active" (even with 0 ballots).
+ * Do not gate this on vote tallies — empty results still means the deadline passed.
+ */
+export function votingDisplayStatus(
+  row: VotingRow | VotingState | null | undefined,
+): "pending" | "active" | "awaiting_finalize" | "finished" | "unknown" {
+  const st = votingStatus(row);
+  if (st === "finished") return "finished";
+  if (st === "pending") return "pending";
+  if (st === "awaiting_finalize" || votingAwaitingFinalize(row)) return "awaiting_finalize";
+  if (st === "active") return "active";
+  return "unknown";
+}
+
+/** Which deadline caption to show next to the badge. */
+export function votingDeadlineKind(
+  row: VotingRow | VotingState | null | undefined,
+): "until" | "expired" | "ended" | null {
+  const end = endsAtMs(row);
+  if (end == null) return null;
+  const disp = votingDisplayStatus(row);
+  if (disp === "finished") return "ended";
+  if (disp === "awaiting_finalize" || Date.now() >= end) return "expired";
+  return "until";
+}
+
 /** Normalize platform votingState/meta blobs for UI (За/Против, amount.__bigint). */
 export function normalizeVotingDetail(
   raw: VotingState | null | undefined,

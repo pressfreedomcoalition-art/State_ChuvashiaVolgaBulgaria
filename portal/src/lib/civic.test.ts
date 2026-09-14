@@ -9,6 +9,8 @@ import {
   pickName,
   shortAddr,
   votingAddress,
+  votingDeadlineKind,
+  votingDisplayStatus,
   votingStatus,
 } from "./civic";
 
@@ -32,6 +34,16 @@ describe("civic helpers", () => {
     expect(votingStatus({ status: "finished" })).toBe("finished");
     expect(votingStatus({ awaitingFinalize: true, status: "active" })).toBe("awaiting_finalize");
     expect(votingAddress({ voting: "EQ1", address: "EQ2" })).toBe("EQ2");
+  });
+
+  it("display status uses deadline even with zero tallies", () => {
+    const past = Math.floor(Date.now() / 1000) - 120;
+    const row = { status: "active", endsAt: past };
+    expect(votingDisplayStatus(row)).toBe("awaiting_finalize");
+    expect(votingDeadlineKind(row)).toBe("expired");
+    expect(votingDisplayStatus({ status: "active", endsAt: past + 10_000 })).toBe("active");
+    expect(votingDeadlineKind({ status: "active", endsAt: past + 10_000 })).toBe("until");
+    expect(votingDeadlineKind({ status: "finished", endsAt: past })).toBe("ended");
   });
 
   it("normalizes votingState amount.__bigint and meta name", () => {

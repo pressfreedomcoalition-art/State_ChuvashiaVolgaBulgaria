@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { useApp } from "../state/AppState";
-import { bounceableAddr, endsAtMs, votingAwaitingFinalize, votingStatus, type VotingState } from "../lib/civic";
+import { bounceableAddr, endsAtMs, votingAwaitingFinalize, votingDeadlineKind, votingDisplayStatus, votingStatus, type VotingState } from "../lib/civic";
 import { castCivicVote, isInsufficientGasError } from "../lib/civicActions";
 import { finalizeVoting, launchVoting, readPendingLaunch } from "../lib/createVotingFlow";
 import { isE2eTestnet, resolveWallet } from "../lib/e2eHooks";
@@ -152,22 +152,30 @@ export function ReferendumDetail() {
 
   const title = state?.title || state?.name || row?.title || address;
   const desc = state?.description || row?.description || "";
-  const st = votingStatus(state || row);
+  const snap = state || row;
+  const st = votingDisplayStatus(snap);
   const options = state?.options || state?.results || row?.options || [];
   const total = options.reduce((s, o) => s + optionVotes(o), 0);
-  const needFinalize = votingAwaitingFinalize(state || row);
+  const needFinalize = votingAwaitingFinalize(snap);
   const canVote = (st === "active" || st === "unknown") && !needFinalize && !done && !finalizeSent;
-  // DAO VotingDetail: hide finalize once tx left wallet; also require ballots (total > 0).
-  const showFinalize =
-    !finalizeSent && st !== "finished" && needFinalize && total > 0;
-  const endMs = endsAtMs(state || row);
+  // Show finalize when deadline passed (even with 0 tallies — chain may still need the tx).
+  const showFinalize = !finalizeSent && st !== "finished" && needFinalize;
+  const endMs = endsAtMs(snap);
   const endLabel = endMs ? formatDateTime(endMs) : "";
+  const deadlineKind = votingDeadlineKind(snap);
 
   function statusLabel() {
     if (st === "finished" || finalizeSent) return tt("votingDone");
     if (st === "pending") return tt("votingPending");
-    if (showFinalize || st === "awaiting_finalize") return tt("votingAwaitFinalize");
+    if (st === "awaiting_finalize" || needFinalize) return tt("votingAwaitFinalize");
     return tt("votingOpen");
+  }
+
+  function deadlineText() {
+    if (!endLabel || !deadlineKind) return null;
+    if (finalizeSent || deadlineKind === "ended") return tt("endedAt", { when: endLabel });
+    if (deadlineKind === "expired") return tt("expiredAt", { when: endLabel });
+    return tt("endsAt", { when: endLabel });
   }
 
   function ResultsBars() {
@@ -319,11 +327,9 @@ export function ReferendumDetail() {
       <h1 className="page-title">{title}</h1>
       <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         <span className={`badge ${st === "finished" || finalizeSent ? "badge-ok" : "badge-run"}`}>{statusLabel()}</span>
-        {endLabel ? (
+        {deadlineText() ? (
           <span className="muted" data-testid="voting-ends-at">
-            {st === "finished" || finalizeSent || needFinalize
-              ? tt("endedAt", { when: endLabel })
-              : tt("endsAt", { when: endLabel })}
+            {deadlineText()}
           </span>
         ) : null}
       </div>
@@ -383,6 +389,7 @@ export function ReferendumDetail() {
         <div className="card">
           <h3>{tt("finalizeTitle")}</h3>
           <p className="muted">{tt("finalizeHint")}</p>
+          {total === 0 ? <p className="muted">{tt("finalizeNoVotes")}</p> : null}
           <button className="btn btn-primary" disabled={busy} data-testid="voting-finalize" onClick={() => void doFinalize()}>
             {tt("finalize")}
           </button>
