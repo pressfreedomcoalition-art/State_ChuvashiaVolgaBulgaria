@@ -1,0 +1,29 @@
+/**
+ * CHV · Volga Bulgaria — DAO screen theme (DaoParam ui.css)
+ * Official miniapp maps these keys → --tg-* after a kind=4 / vtype 33 vote.
+ * Vote payload (same colors): https://chv.blc.cab/dao-ui.css.json
+ *
+ * Palette from portal/src/styles/global.css:
+ *   paper #f7f4ee · card #fff · ink #1b1b1b · muted #6b7280 · maroon #8b1d1d · linen #efe9df
+ */
+:root {
+  --tg-bg: #f7f4ee;
+  --tg-card: #ffffff;
+  --tg-text: #1b1b1b;
+  --tg-hint: #6b7280;
+  --tg-accent: #8b1d1d;
+  --tg-accent-text: #ffffff;
+  --tg-secondary-bg: #efe9df;
+
+  /* aliases used by some custom UIs */
+  --chv-navy: #1a232e;
+  --chv-navy-2: #232f3e;
+  --chv-maroon: #8b1d1d;
+  --chv-maroon-hover: #6e1515;
+  --chv-linen: #efe9df;
+  --chv-paper: #f7f4ee;
+  --chv-card: #ffffff;
+  --chv-ink: #1b1b1b;
+  --chv-muted: #6b7280;
+  --chv-line: #e5e0d6;
+}
