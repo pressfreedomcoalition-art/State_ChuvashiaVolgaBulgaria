@@ -1,18 +1,23 @@
 name: Deploy CHV cache
 
-# No sudo: Node in home + Pinggy HTTPS tunnel. Frontend stays on GitHub Pages.
+# PROD_VPS: nginx+certbot+systemd on cache.chv.blc.cab (needs mish sudo -n).
+# REFRESH / schedule: legacy Pinggy (ignored once PROD is up).
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "OWN_VPS = full install; REFRESH = tunnel URL only"
+        description: "PROD_VPS | OWN_VPS | REFRESH"
         required: true
-        default: "REFRESH"
+        default: "PROD_VPS"
   schedule:
     - cron: "*/20 * * * *"
 
 jobs:
   deploy:
+    # Skip Pinggy schedule once prod URL is the stable cache host
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,7 +30,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.NEW_SSH }}
 
-      - name: Full install or tunnel refresh
+      - name: Deploy
         id: pub
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -34,53 +39,174 @@ jobs:
           MODE: ${{ github.event_name == 'schedule' && 'REFRESH' || github.event.inputs.confirm }}
         run: |
           set -euo pipefail
-          HOST="${SSH_HOST:?set secret SSH_HOST}"
-          USER_="${SSH_USER:?set secret SSH_USER}"
+          HOST="${SSH_HOST:?}"
+          USER_="${SSH_USER:?}"
           PORT="${SSH_PORT:-22}"
           SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
           SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
-          MODE="${MODE:-REFRESH}"
+          MODE="${MODE:-PROD_VPS}"
           echo "MODE=$MODE"
+
+          # If stable prod is already healthy, skip Pinggy refresh on schedule
+          if [[ "$MODE" == "REFRESH" ]]; then
+            if curl -fsS --max-time 15 "https://cache.chv.blc.cab/health" >/dev/null 2>&1; then
+              echo "Prod cache healthy — skip Pinggy refresh"
+              echo "url=https://cache.chv.blc.cab" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
 
           TMP=$(mktemp -d)
           trap 'rm -rf "$TMP"' EXIT
-          cp deploy/user-cache/install-and-run.sh \
-             deploy/user-cache/start-user-cache.sh \
-             deploy/user-cache/refresh-tunnel.sh \
-             "$TMP/"
 
-          if [[ "$MODE" == "OWN_VPS" ]]; then
+          if [[ "$MODE" == "PROD_VPS" ]]; then
             tar -cf "$TMP/bundle.tar" \
               --exclude=node_modules --exclude=data --exclude=.env \
               -C cache-server .
+            cp deploy/chv-cache.service deploy/chv-cache-warm.service deploy/chv-cache-warm.timer \
+               deploy/nginx-cache.chv.example.conf "$TMP/"
             "${SCP[@]}" "$TMP/bundle.tar" \
-              "$TMP/install-and-run.sh" "$TMP/start-user-cache.sh" "$TMP/refresh-tunnel.sh" \
+              "$TMP/chv-cache.service" "$TMP/chv-cache-warm.service" "$TMP/chv-cache-warm.timer" \
+              "$TMP/nginx-cache.chv.example.conf" \
               "${USER_}@${HOST}:/tmp/"
+
             "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
+          set -euo pipefail
+          if ! sudo -n true 2>/dev/null; then
+            echo "sudo_FAIL: run once as root: echo 'mish ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/mish-chv && chmod 440 /etc/sudoers.d/mish-chv"
+            exit 1
+          fi
+          echo "sudo_ok"
+
+          # Stop Pinggy / user-space cache if running
+          pkill -f 'a.pinggy.io' 2>/dev/null || true
+          pkill -f 'chv-cache/server.mjs' 2>/dev/null || true
+          ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true ) | crontab - || true
+
+          if ! command -v node >/dev/null 2>&1 || ! node -v | grep -qE 'v(2[0-9]|[3-9])'; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -n bash -
+            sudo -n apt-get install -y nodejs
+          fi
+          sudo -n apt-get update -y
+          sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y nginx certbot python3-certbot-nginx
+
+          getent passwd www-data >/dev/null || sudo -n useradd -r -s /usr/sbin/nologin www-data
+          sudo -n install -d -o www-data -g www-data /opt/chv-cache /opt/chv-cache/data /var/www/certbot
+
+          if [[ -f /opt/chv-cache/.env ]]; then
+            sudo -n cp -a /opt/chv-cache/.env /tmp/chv-cache.env.bak
+          elif [[ -f "$HOME/chv-cache/.env" ]]; then
+            sudo -n cp -a "$HOME/chv-cache/.env" /tmp/chv-cache.env.bak
+          fi
+
+          sudo -n tar -xf /tmp/bundle.tar -C /opt/chv-cache
+          if [[ -f /tmp/chv-cache.env.bak ]]; then
+            sudo -n mv /tmp/chv-cache.env.bak /opt/chv-cache/.env
+          elif [[ ! -f /opt/chv-cache/.env ]]; then
+            printf '%s\n' \
+              'PORT=8790' \
+              'DAO_ADDRESS=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx' \
+              'CORS_ORIGIN=https://chv.blc.cab,http://localhost:5173' \
+              'DATA_DIR=/opt/chv-cache/data' \
+              'CIVIC_UPSTREAM=https://dao.won.onl/civic' \
+              | sudo -n tee /opt/chv-cache/.env >/dev/null
+          fi
+          if ! sudo -n grep -q '^CIVIC_UPSTREAM=' /opt/chv-cache/.env; then
+            echo 'CIVIC_UPSTREAM=https://dao.won.onl/civic' | sudo -n tee -a /opt/chv-cache/.env >/dev/null
+          fi
+
+          sudo -n bash -c 'cd /opt/chv-cache && npm ci --omit=dev'
+          sudo -n chown -R www-data:www-data /opt/chv-cache
+
+          # Prefer system node path in unit
+          NODE_BIN=$(command -v node)
+          sudo -n sed "s|/usr/bin/node|${NODE_BIN}|g" /tmp/chv-cache.service | sudo -n tee /etc/systemd/system/chv-cache.service >/dev/null
+          sudo -n install -m 644 /tmp/chv-cache-warm.service /etc/systemd/system/chv-cache-warm.service
+          sudo -n install -m 644 /tmp/chv-cache-warm.timer /etc/systemd/system/chv-cache-warm.timer
+
+          # HTTP-only nginx first (for certbot), then certbot adds SSL
+          sudo -n tee /etc/nginx/sites-available/cache.chv.blc.cab.conf >/dev/null <<'NGX'
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name cache.chv.blc.cab;
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root /var/www/certbot;
+                  default_type text/plain;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:8790;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  client_max_body_size 2m;
+              }
+          }
+          NGX
+          # strip accidental indent from heredoc
+          sudo -n sed -i 's/^          //' /etc/nginx/sites-available/cache.chv.blc.cab.conf
+          sudo -n ln -sfn /etc/nginx/sites-available/cache.chv.blc.cab.conf /etc/nginx/sites-enabled/cache.chv.blc.cab.conf
+          sudo -n rm -f /etc/nginx/sites-enabled/default
+          sudo -n nginx -t
+          sudo -n systemctl enable --now nginx
+          sudo -n systemctl reload nginx
+
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now chv-cache.service
+          sudo -n systemctl enable --now chv-cache-warm.timer
+          sudo -n systemctl restart chv-cache.service
+
+          for i in 1 2 3 4 5 6 7 8; do
+            curl -fsS http://127.0.0.1:8790/health && break
+            sleep 2
+          done
+          echo
+          curl -fsS http://127.0.0.1:8790/health
+          echo
+
+          if sudo -n certbot --nginx -d cache.chv.blc.cab --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
+            echo "certbot_ok"
+          else
+            echo "certbot_FAIL — open DO firewall TCP 80/443 to this droplet, then re-run PROD_VPS"
+            exit 1
+          fi
+
+          curl -fsS https://cache.chv.blc.cab/health
+          echo
+          sudo -n systemctl --no-pager is-active chv-cache.service
+          sudo -n systemctl --no-pager is-active nginx
+          EOS
+
+            echo "url=https://cache.chv.blc.cab" >> "$GITHUB_OUTPUT"
+            curl -fsS --max-time 30 "https://cache.chv.blc.cab/health"
+            echo
+          else
+            # Legacy Pinggy paths (OWN_VPS / REFRESH) — only if prod down
+            echo "::warning::Using legacy Pinggy mode ($MODE). Prefer PROD_VPS."
+            cp deploy/user-cache/refresh-tunnel.sh deploy/user-cache/start-user-cache.sh \
+               deploy/user-cache/install-and-run.sh "$TMP/"
+            if [[ "$MODE" == "OWN_VPS" ]]; then
+              tar -cf "$TMP/bundle.tar" --exclude=node_modules --exclude=data --exclude=.env -C cache-server .
+              "${SCP[@]}" "$TMP/bundle.tar" "$TMP/install-and-run.sh" "$TMP/start-user-cache.sh" "$TMP/refresh-tunnel.sh" "${USER_}@${HOST}:/tmp/"
+              "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
           set -euo pipefail
           chmod +x /tmp/install-and-run.sh /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh
           mkdir -p "$HOME/chv-cache/logs"
           cp /tmp/start-user-cache.sh /tmp/refresh-tunnel.sh "$HOME/chv-cache/"
-          chmod +x "$HOME/chv-cache/start-user-cache.sh" "$HOME/chv-cache/refresh-tunnel.sh"
           /tmp/install-and-run.sh /tmp/bundle.tar
-          ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
-            echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
-            echo "@reboot $HOME/chv-cache/start-user-cache.sh"
-          ) | crontab -
           cat "$HOME/chv-cache/public-url.txt"
           EOS
-          else
-            "${SCP[@]}" "$TMP/refresh-tunnel.sh" "$TMP/start-user-cache.sh" \
-              "${USER_}@${HOST}:/tmp/"
-            "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
+            else
+              "${SCP[@]}" "$TMP/refresh-tunnel.sh" "$TMP/start-user-cache.sh" "${USER_}@${HOST}:/tmp/"
+              "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'EOS'
           set -euo pipefail
           mkdir -p "$HOME/chv-cache/logs"
           cp /tmp/refresh-tunnel.sh /tmp/start-user-cache.sh "$HOME/chv-cache/"
           chmod +x "$HOME/chv-cache/refresh-tunnel.sh" "$HOME/chv-cache/start-user-cache.sh"
-          ( crontab -l 2>/dev/null | grep -v 'refresh-tunnel.sh' | grep -v 'start-user-cache.sh' || true
-            echo "*/25 * * * * $HOME/chv-cache/refresh-tunnel.sh >>$HOME/chv-cache/logs/cron-tunnel.log 2>&1"
-            echo "@reboot $HOME/chv-cache/start-user-cache.sh"
-          ) | crontab -
           if ! curl -fsS --max-time 3 http://127.0.0.1:8790/health >/dev/null 2>&1; then
             "$HOME/chv-cache/start-user-cache.sh" || true
             sleep 3
@@ -88,15 +214,14 @@ jobs:
           "$HOME/chv-cache/refresh-tunnel.sh"
           cat "$HOME/chv-cache/public-url.txt"
           EOS
+            fi
+            URL=$("${SSH[@]}" "${USER_}@${HOST}" "cat \$HOME/chv-cache/public-url.txt")
+            echo "url=$URL" >> "$GITHUB_OUTPUT"
+            curl -fsS --max-time 30 "${URL}/health"
+            echo
           fi
 
-          URL=$("${SSH[@]}" "${USER_}@${HOST}" "cat \$HOME/chv-cache/public-url.txt")
-          echo "Cache public URL: $URL"
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-          curl -fsS --max-time 30 "${URL}/health"
-          echo
-
-      - name: Commit cache-api.json
+      - name: Point portal at stable cache URL
         env:
           CACHE_URL: ${{ steps.pub.outputs.url }}
         run: |
@@ -109,8 +234,10 @@ jobs:
           if git diff --staged --quiet; then
             echo "cache-api.json unchanged"
           else
-            git commit -m "chore: refresh cache-api.json tunnel URL"
+            git commit -m "chore: set cache-api.json to ${CACHE_URL}"
             git push
-            echo "Updated portal/public/cache-api.json"
           fi
           gh variable set VITE_CACHE_API --repo "${{ github.repository }}" --body "$CACHE_URL" || true
+          if [[ "$CACHE_URL" == "https://cache.chv.blc.cab" ]]; then
+            gh workflow run pages.yml --repo "${{ github.repository }}" || true
+          fi
