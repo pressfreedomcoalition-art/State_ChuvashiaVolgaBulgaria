@@ -1,5 +1,9 @@
 name: GitHub Pages
 
+# Archive / theme assets on *.github.io only.
+# Apex https://chv.blc.cab is bound-domain mirror (official DAO UI) — see docs/BOUND_DOMAIN_CHV.md.
+# Do NOT set Pages custom domain to chv.blc.cab (conflicts with mirror DNS/TLS).
+
 on:
   push:
     branches: [main]
@@ -37,8 +41,9 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          VITE_BASE: /
-          VITE_PORTAL_ORIGIN: https://chv.blc.cab
+          VITE_BASE: /State_ChuvashiaVolgaBulgaria/
+          # Archive build on project Pages (no custom domain)
+          VITE_PORTAL_ORIGIN: https://pressfreedomcoalition-art.github.io/State_ChuvashiaVolgaBulgaria
           VITE_CIVIC_API: https://dao.won.onl/civic
           VITE_OFFICIAL_UI: https://dao.won.onl
           VITE_CACHE_API: ${{ vars.VITE_CACHE_API }}

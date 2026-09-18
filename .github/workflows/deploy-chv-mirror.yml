@@ -1,0 +1,55 @@
+name: Deploy CHV DAO mirror
+
+# Nginx reverse-proxy: chv.blc.cab → dao.blc.cab (bound-domain hosting on VPS).
+# Requires DNS A for chv.blc.cab → VPS after Pages custom domain is removed.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/nginx-chv-mirror.conf"
+      - "deploy/install-chv-mirror.sh"
+      - ".github/workflows/deploy-chv-mirror.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.NEW_SSH }}
+
+      - name: Install nginx mirror on VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          NEW_PASS: ${{ secrets.NEW_PASS }}
+        run: |
+          set -euo pipefail
+          HOST="${SSH_HOST:?set secret SSH_HOST}"
+          USER_="${SSH_USER:?set secret SSH_USER}"
+          PORT="${SSH_PORT:-22}"
+          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          cp deploy/nginx-chv-mirror.conf "$TMP/"
+          cp deploy/install-chv-mirror.sh "$TMP/"
+          printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
+
+          "${SCP[@]}" "$TMP/nginx-chv-mirror.conf" "$TMP/install-chv-mirror.sh" "$TMP/chv-sudo.pass" \
+            "${USER_}@${HOST}:/tmp/"
+
+          "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
+          set -euo pipefail
+          SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
+          cleanup() { rm -f /tmp/chv-sudo.pass /tmp/nginx-chv-mirror.conf /tmp/install-chv-mirror.sh; }
+          trap cleanup EXIT
+          chmod +x /tmp/install-chv-mirror.sh
+          SUDO /tmp/install-chv-mirror.sh
+          REMOTE

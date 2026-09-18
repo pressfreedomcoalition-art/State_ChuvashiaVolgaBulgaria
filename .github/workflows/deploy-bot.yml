@@ -1,6 +1,6 @@
 name: Deploy CHV Telegram bot
 
-# @bulgaria_state_bot — /start → Web App button (chv.blc.cab)
+# @bulgaria_state_bot — /start → Web App (chv.blc.cab bound-domain DAO mirror)
 on:
   push:
     branches: [main]
@@ -58,9 +58,9 @@ jobs:
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'WEBAPP_URL=%s\n' 'https://chv.blc.cab/'
             printf 'WEBAPP_VERSION=%s\n' '${{ github.sha }}'
-            printf 'BUTTON_TEXT=%s\n' 'Открыть гражданство'
-            printf 'MENU_BUTTON_TEXT=%s\n' 'Кабинет'
-            printf 'START_TEXT=%s\n' 'Кабинет гражданина Чувашии / Волжской Булгарии.\nНажмите кнопку, чтобы открыть миниапп.'
+            printf 'BUTTON_TEXT=%s\n' 'Открыть государство'
+            printf 'MENU_BUTTON_TEXT=%s\n' 'DAO'
+            printf 'START_TEXT=%s\n' 'Чувашия / Волжская Булгария — официальный миниапп государства.\nНажмите кнопку, чтобы открыть https://chv.blc.cab'
           } >"$TMP/chv-bot.env"
           printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
 
