@@ -17,16 +17,20 @@ command -v nginx >/dev/null 2>&1 || apt-get install -y nginx
 command -v certbot >/dev/null 2>&1 || apt-get install -y certbot python3-certbot-nginx
 
 mkdir -p "$WWW/.well-known/acme-challenge"
+echo ok >"$WWW/.well-known/acme-challenge/ping"
+# Drop default site so Host chv.blc.cab always hits our vhost
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
 # Always keep an HTTP vhost that serves ACME + proxies the app (until/after TLS).
 cat >"/etc/nginx/sites-available/${SITE}.conf" <<'HTTPONLY'
 server {
-    listen 80;
-    listen [::]:80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name chv.blc.cab;
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/chv.blc.cab;
         default_type text/plain;
+        allow all;
     }
     location / {
         proxy_pass https://dao.blc.cab;
@@ -49,11 +53,13 @@ rm -f /etc/nginx/sites-enabled/chv.blc.cab.static.conf 2>/dev/null || true
 nginx -t
 systemctl reload nginx
 
+echo "ACME probe local: $(curl -fsS -H 'Host: chv.blc.cab' http://127.0.0.1/.well-known/acme-challenge/ping || echo FAIL)"
+echo "ACME probe public: $(curl -fsS http://chv.blc.cab/.well-known/acme-challenge/ping || echo FAIL)"
+
 if [[ ! -f "/etc/letsencrypt/live/${SITE}/fullchain.pem" ]]; then
   echo "Issuing TLS for ${SITE} via webroot…"
-  # webroot works with reverse-proxy; --nginx plugin often 404s on ACME
   if certbot certonly --webroot -w "$WWW" -d "$SITE" \
-      --non-interactive --agree-tos --register-unsafely-without-email; then
+      --non-interactive --agree-tos --register-unsafely-without-email -v; then
     echo "certificate issued"
   else
     echo "certbot failed — check DNS A ${SITE} → this VPS and port 80" >&2
