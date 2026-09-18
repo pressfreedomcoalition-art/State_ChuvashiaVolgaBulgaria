@@ -65,11 +65,20 @@ Param: `miniapp.bot` = `@bulgaria_state_bot`.
 
 В Cloudflare зоне `blc.cab`: запись `chv` как у `dao` (proxied), чтобы отдавался тот же миниапп.
 
-### Вариант B (VPS государства)
+### Вариант B (VPS государства) — уже подготовлен в этом репо
 
-1. VPS `137.184.65.1` — nginx reverse-proxy `chv.blc.cab` → `https://dao.blc.cab` (см. [`deploy/nginx-chv-mirror.conf`](../deploy/nginx-chv-mirror.conf), workflow **Deploy CHV DAO mirror**).
-2. В Cloudflare `blc.cab`: `chv` → **A** `137.184.65.1` (или CNAME на хост VPS), снять CNAME на `*.github.io`.
-3. Certbot для `chv.blc.cab` на VPS.
+Nginx reverse-proxy на VPS уже ставится workflow **Deploy CHV DAO mirror**  
+([`deploy/nginx-chv-mirror.conf`](../deploy/nginx-chv-mirror.conf)).
+
+**Срочно (иначе apex 404):** в Cloudflare зоне `blc.cab` запись `chv`:
+
+| Было | Нужно |
+|------|--------|
+| CNAME → `pressfreedomcoalition-art.github.io` | **A** → `137.184.65.1` (прокси CF можно выключить / DNS only) |
+
+Затем на VPS (или снова `workflow_dispatch` Deploy CHV DAO mirror) — certbot выпустит TLS.
+
+GitHub Pages custom domain `chv.blc.cab` уже снят (`cname: null`).
 
 GitHub Pages **не** должен держать custom domain `chv.blc.cab` (конфликт TLS/DNS).
 

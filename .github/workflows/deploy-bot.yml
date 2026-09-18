@@ -82,7 +82,7 @@ jobs:
           SUDO install -d -o www-data -g www-data /opt/chv-bot
           SUDO tar -xf /tmp/bundle.tar -C /opt/chv-bot
           SUDO install -m 600 -o www-data -g www-data /tmp/chv-bot.env /opt/chv-bot/.env
-          SUDO bash -c 'cd /opt/chv-bot && npm ci --omit=dev'
+          SUDO bash -c 'cd /opt/chv-bot && if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi'
           SUDO chown -R www-data:www-data /opt/chv-bot
           SUDO install -m 644 /tmp/chv-bot.service /etc/systemd/system/chv-bot.service
           SUDO systemctl daemon-reload
