@@ -11,5 +11,12 @@ ss -lntp | grep -E ':80|:443' || true
 echo "==== local curl headers"
 curl -sS -D- -o /tmp/acme.out -H 'Host: chv.blc.cab' http://127.0.0.1/.well-known/acme-challenge/ping | head -25 || true
 echo "BODY:"; cat /tmp/acme.out 2>/dev/null || true; echo
-echo "==== root curl"
-curl -sS -D- -o /dev/null -H 'Host: chv.blc.cab' http://127.0.0.1/ | head -20 || true
+echo "==== bulcoin conf head"
+sed -n '1,60p' /etc/nginx/sites-available/bulcoin.conf || true
+echo "==== curl :8080 acme"
+curl -sS -D- -o /tmp/acme8080.out -H 'Host: chv.blc.cab' http://127.0.0.1:8080/.well-known/acme-challenge/ping | head -25 || true
+echo "BODY8080:"; cat /tmp/acme8080.out 2>/dev/null || true; echo
+echo "==== iptables nat"
+iptables -t nat -L -n 2>/dev/null | head -40 || true
+echo "==== nft"
+nft list ruleset 2>/dev/null | head -80 || true
