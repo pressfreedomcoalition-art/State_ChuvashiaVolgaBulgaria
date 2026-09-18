@@ -51,5 +51,8 @@ jobs:
           cleanup() { rm -f /tmp/chv-sudo.pass /tmp/nginx-chv-mirror.conf /tmp/install-chv-mirror.sh; }
           trap cleanup EXIT
           chmod +x /tmp/install-chv-mirror.sh
-          SUDO /tmp/install-chv-mirror.sh
+          # Avoid "Text file busy" if a parallel job still holds the file
+          cp /tmp/install-chv-mirror.sh /tmp/install-chv-mirror.run.sh
+          chmod +x /tmp/install-chv-mirror.run.sh
+          SUDO /tmp/install-chv-mirror.run.sh
           REMOTE
