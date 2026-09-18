@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Install / refresh nginx reverse-proxy for chv.blc.cab → dao.blc.cab
+# Re-run after DNS A points here so certbot can issue TLS.
 set -euo pipefail
 
 CONF_SRC="${1:-/tmp/nginx-chv-mirror.conf}"
