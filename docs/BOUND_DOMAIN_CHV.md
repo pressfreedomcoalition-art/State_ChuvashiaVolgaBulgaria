@@ -6,56 +6,65 @@ DAO: `EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx`
 Канон UI: https://dao.blc.cab · зеркало РФ: https://dao.won.onl  
 Бот: `@bulgaria_state_bot`
 
-## 1. Голосования (ончейн, kind=4)
+## 0. IP `137.184.65.1`
 
-Открыть ДАО в официальном UI, Hub → создать голосование → Start → **За** → Finalize.
+Это **VPS государства** (DigitalOcean), куда уже смотрит `cache.chv.blc.cab`.  
+На нём же поставлен nginx reverse-proxy для зеркала миниаппа на `chv.blc.cab` (workflow **Deploy CHV DAO mirror**).
+
+В Cloudflare для `chv` нужна запись **A → `137.184.65.1`** (сейчас ещё CNAME на GitHub Pages — из‑за этого apex 404).
+
+## 1. Голосования (ончейн, kind=4) — чувашские названия
+
+Создание TX подписывается **кошельком** (агент без ключа создать не может).  
+Ниже — готовые формы: открой ссылку → заполни поля как указано → Create → Start.  
+Потом ты: **За** → Finalize.
+
+Готовые payload’ы: [`portal/public/bound-votings.json`](../portal/public/bound-votings.json).
 
 ### 1.1 Тема экрана (vtype **33**, ключ `ui.css`)
 
-Вставить **JSON** (не URL):
+| | |
+|--|--|
+| **Ят** | Экрана сӑнӗ — CHV тӗсӗсем |
+| **Ҫырса кӑтартни** | Официаллӑ миниапп экране чӑваш кабинечӗн тӗсӗсемпе килӗштерет (paper, maroon, linen). Параметр ui.css. |
+| **Тӗс JSON** | см. ниже (в форме vtype 33 — палитра / JSON) |
 
 ```json
 {"v":1,"bg":"#f7f4ee","card":"#ffffff","text":"#1b1b1b","hint":"#6b7280","accent":"#8b1d1d","accentText":"#ffffff","secondaryBg":"#efe9df"}
 ```
 
-Копия в репо: [`portal/public/dao-ui.css.json`](../portal/public/dao-ui.css.json).  
-Архив после cutover Pages: `https://pressfreedomcoalition-art.github.io/State_ChuvashiaVolgaBulgaria/dao-ui.css.json` (если Pages без custom domain).
-
-Проверка:
-
-```http
-GET https://dao.blc.cab/civic/v1/cache/list?key=params:EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx
-```
-
-В списке должен быть `{ "key": "ui.css", "isString": true, "str": "{…}" }`.
-
-Deep-link в ДАО:  
-https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx
+Создать:  
+https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=33
 
 ### 1.2 Домен-зеркало (vtype **29**)
 
-Hub → **«Домен-зеркало ДАО»** → хост: `chv.blc.cab` → За → Finalize.
+| | |
+|--|--|
+| **Ят** | chv.blc.cab — домен-тӗлӗк |
+| **Ҫырса кӑтартни** | chv.blc.cab урлӑ кӗрсен тӳрех ку патшалӑх ДАОӗ уҫӑлать, платформа каталогӗ ҫук. Параметр miniapp.domain.chv.blc.cab. |
+| **Хост** | `chv.blc.cab` |
 
-Ончейн: param `miniapp.domain.chv.blc.cab` (префикс `miniapp.domain.*`).  
-После Finalize вход с этого hostname открывает только CHV (`catalogLocked`).
-
-Проверка кеша (после индексации платформой):
-
-```http
-GET https://dao.blc.cab/civic/v1/cache/list?key=boundDomain:chv.blc.cab
-```
-
-или наличие ключа в `params:`.
+Создать:  
+https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=29
 
 ### 1.3 Миниапп @bot (vtype **28**)
 
-Hub → **«Миниапп ДАО (@bot)»** → `@bulgaria_state_bot` → За → Finalize.
+| | |
+|--|--|
+| **Ят** | @bulgaria_state_bot миниаппӗ |
+| **Ҫырса кӑтартни** | Телеграм бот @bulgaria_state_bot ку ДАОна ҫыхӑнтарать. WebApp URL: https://chv.blc.cab/ |
+| **Бот** | `@bulgaria_state_bot` |
 
-Param: `miniapp.bot` = `@bulgaria_state_bot`.
+Создать:  
+https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=28
 
-В BotFather: Web App URL = `https://chv.blc.cab/` (уже так в деплое бота).
+В BotFather Web App URL уже `https://chv.blc.cab/` (деплой бота).
 
-Опционально: Settings → notify → Bot API token на civic-verifier (тот же @bot, что в param).
+После Finalize — проверка:
+
+```bash
+node scripts/verify-bound-domain.mjs
+```
 
 ## 2. DNS + хостинг миниаппа
 

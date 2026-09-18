@@ -1,0 +1,32 @@
+{
+  "dao": "EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx",
+  "note": "Create TX needs wallet signature. Then vote For + Finalize.",
+  "votings": [
+    {
+      "vtype": 33,
+      "paramKey": "ui.css",
+      "titleCv": "Экрана сӑнӗ — CHV тӗсӗсем",
+      "descriptionCv": "Официаллӑ миниапп экране чӑваш кабинечӗн тӗсӗсемпе килӗштерет (paper, maroon, linen). Параметр ui.css.",
+      "paramStr": "{\"v\":1,\"bg\":\"#f7f4ee\",\"card\":\"#ffffff\",\"text\":\"#1b1b1b\",\"hint\":\"#6b7280\",\"accent\":\"#8b1d1d\",\"accentText\":\"#ffffff\",\"secondaryBg\":\"#efe9df\"}",
+      "createUrl": "https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=33"
+    },
+    {
+      "vtype": 29,
+      "paramKey": "miniapp.domain.chv.blc.cab",
+      "titleCv": "chv.blc.cab — домен-тӗлӗк",
+      "descriptionCv": "chv.blc.cab урлӑ кӗрсен тӳрех ку патшалӑх ДАОӗ уҫӑлать, платформа каталогӗ ҫук. Параметр miniapp.domain.chv.blc.cab.",
+      "domainHost": "chv.blc.cab",
+      "createUrl": "https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=29"
+    },
+    {
+      "vtype": 28,
+      "paramKey": "miniapp.bot",
+      "titleCv": "@bulgaria_state_bot миниаппӗ",
+      "descriptionCv": "Телеграм бот @bulgaria_state_bot ку ДАОна ҫыхӑнтарать. WebApp URL: https://chv.blc.cab/",
+      "paramStr": "@bulgaria_state_bot",
+      "createUrl": "https://dao.blc.cab/#dao=EQDD0Z8_-Anqv5Yww14F-DpzKRaZZdWXgLs1p8c-XyC81Mmx&create=1&vtype=28"
+    }
+  ],
+  "vpsIp": "137.184.65.1",
+  "vpsIpMeaning": "State VPS (same as cache.chv.blc.cab); nginx mirror for chv.blc.cab after DNS A points here"
+}
