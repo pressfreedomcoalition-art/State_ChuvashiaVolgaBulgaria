@@ -40,9 +40,10 @@ jobs:
           trap 'rm -rf "$TMP"' EXIT
           cp deploy/nginx-chv-mirror.conf "$TMP/"
           cp deploy/install-chv-mirror.sh "$TMP/"
+          cp deploy/diagnose-chv-mirror.sh "$TMP/"
           printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
 
-          "${SCP[@]}" "$TMP/nginx-chv-mirror.conf" "$TMP/install-chv-mirror.sh" "$TMP/chv-sudo.pass" \
+          "${SCP[@]}" "$TMP/nginx-chv-mirror.conf" "$TMP/install-chv-mirror.sh" "$TMP/diagnose-chv-mirror.sh" "$TMP/chv-sudo.pass" \
             "${USER_}@${HOST}:/tmp/"
 
           "${SSH[@]}" "${USER_}@${HOST}" /bin/bash <<'REMOTE'
@@ -51,8 +52,11 @@ jobs:
           cleanup() { rm -f /tmp/chv-sudo.pass /tmp/nginx-chv-mirror.conf /tmp/install-chv-mirror.sh; }
           trap cleanup EXIT
           chmod +x /tmp/install-chv-mirror.sh
-          # Avoid "Text file busy" if a parallel job still holds the file
           cp /tmp/install-chv-mirror.sh /tmp/install-chv-mirror.run.sh
           chmod +x /tmp/install-chv-mirror.run.sh
           SUDO /tmp/install-chv-mirror.run.sh
+          if [[ -f /tmp/diagnose-chv-mirror.sh ]]; then
+            chmod +x /tmp/diagnose-chv-mirror.sh
+            SUDO /tmp/diagnose-chv-mirror.sh || true
+          fi
           REMOTE
