@@ -86,9 +86,11 @@ server {
     }
 }
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    listen ${PUBLIC_IP}:443 ssl http2;
+    # Match bulcoin/miniapp listen style (ssl without http2 param) so we share the same
+    # address:port group and SNI can select this server_name.
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    listen ${PUBLIC_IP}:443 ssl default_server;
     server_name chv.blc.cab;
     ssl_certificate     /etc/letsencrypt/live/chv.blc.cab/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/chv.blc.cab/privkey.pem;
@@ -135,7 +137,30 @@ if [[ ! -f "/etc/letsencrypt/live/${SITE}/fullchain.pem" ]]; then
 fi
 
 if [[ -f "/etc/letsencrypt/live/${SITE}/fullchain.pem" ]]; then
+  echo "On-disk LE cert for ${SITE}:"
+  openssl x509 -in "/etc/letsencrypt/live/${SITE}/fullchain.pem" -noout -subject -ext subjectAltName || true
+  if ! openssl x509 -in "/etc/letsencrypt/live/${SITE}/fullchain.pem" -noout -text 2>/dev/null | grep -q "DNS:chv.blc.cab"; then
+    echo "ERROR: /etc/letsencrypt/live/${SITE} is not a cert for chv.blc.cab — re-issue" >&2
+    certbot certonly --webroot -w "$WWW" -d "$SITE" --force-renewal \
+      --non-interactive --agree-tos --register-unsafely-without-email || true
+  fi
+
+  # miniapp (bulcoin.conf) often owns listen IP:443 as the only/default vhost; steal default_server
+  # and ensure we share the same listen socket so SNI can select chv.blc.cab.
+  if [[ -f /etc/nginx/sites-available/bulcoin.conf ]]; then
+    cp -a /etc/nginx/sites-available/bulcoin.conf "/etc/nginx/sites-available/bulcoin.conf.bak-chv-$(date +%s)"
+    # Drop default_server on 443 if present; keep miniapp reachable by its own server_name.
+    sed -i -E 's/(listen[[:space:]]+[^;]*443[^;]*)[[:space:]]+default_server/\1/g' \
+      /etc/nginx/sites-available/bulcoin.conf || true
+  fi
+
   write_https_conf
+  # Ensure default_server on the public IP (write_https_conf already sets it; keep idempotent).
+  if ! grep -q "listen ${PUBLIC_IP}:443 ssl default_server" "/etc/nginx/sites-available/${SITE}.conf"; then
+    sed -i -E "s#listen ${PUBLIC_IP}:443 ssl;#listen ${PUBLIC_IP}:443 ssl default_server;#" \
+      "/etc/nginx/sites-available/${SITE}.conf"
+  fi
+
   if nginx -t; then
     systemctl reload nginx
     echo "HTTPS mirror enabled for ${SITE}"
@@ -149,19 +174,23 @@ if [[ -f "/etc/letsencrypt/live/${SITE}/fullchain.pem" ]]; then
   fi
 fi
 
-# Fail closed if SNI still serves another vhost cert (was miniapp.blc.cab).
-CN="$(echo | openssl s_client -connect "${PUBLIC_IP}:443" -servername chv.blc.cab -brief 2>/dev/null \
-  | awk -F': ' '/^subject=/{print $2; exit}' || true)"
-PEER="$(echo | openssl s_client -connect "${PUBLIC_IP}:443" -servername chv.blc.cab 2>/dev/null \
-  | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true)"
-echo "TLS peer for SNI chv.blc.cab:"
+probe_sni() {
+  local dest="$1"
+  echo | openssl s_client -connect "${dest}" -servername chv.blc.cab 2>/dev/null \
+    | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true
+}
+
+echo "TLS peer SNI chv → 127.0.0.1:443:"
+probe_sni "127.0.0.1:443"
+echo "TLS peer SNI chv → ${PUBLIC_IP}:443:"
+PEER="$(probe_sni "${PUBLIC_IP}:443")"
 echo "$PEER"
-if ! echo "$PEER" | grep -q "chv.blc.cab"; then
-  echo "ERROR: SNI chv.blc.cab is not presenting chv.blc.cab cert (got: ${CN:-unknown})" >&2
+if ! echo "$PEER" | grep -q "DNS:chv.blc.cab\|CN *= *chv.blc.cab\|CN=chv.blc.cab"; then
+  echo "ERROR: SNI chv.blc.cab is not presenting chv.blc.cab cert" >&2
+  echo "==== nginx -T ssl excerpt" >&2
+  nginx -T 2>/dev/null | grep -nE "server_name|listen .*443|ssl_certificate " | head -120 >&2 || true
   echo "==== listen 443" >&2
   ss -lntp | grep ':443' >&2 || true
-  echo "==== competing ssl server_name" >&2
-  grep -R "server_name\|listen .*443" /etc/nginx/sites-enabled/ 2>/dev/null | head -80 >&2 || true
   exit 1
 fi
 
