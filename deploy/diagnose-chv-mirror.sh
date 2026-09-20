@@ -20,3 +20,9 @@ echo "==== iptables nat"
 iptables -t nat -L -n 2>/dev/null | head -40 || true
 echo "==== nft"
 nft list ruleset 2>/dev/null | head -80 || true
+echo "==== openssl SNI chv.blc.cab"
+IP="$(curl -4 -fsS --max-time 5 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')"
+echo | openssl s_client -connect "${IP}:443" -servername chv.blc.cab 2>/dev/null \
+  | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true
+echo "==== cert files"
+ls -la /etc/letsencrypt/live/chv.blc.cab/ 2>/dev/null || true

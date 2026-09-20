@@ -71,7 +71,11 @@ if (ui?.str) {
 const domainKey = `miniapp.domain.${HOST}`;
 const domainParam =
   findParam(params, domainKey) ||
-  params.find((p) => String(p.key || "").startsWith("miniapp.domain.") && String(p.key).includes(HOST));
+  params.find(
+    (p) =>
+      String(p.key || "").startsWith("miniapp.domain.") &&
+      (String(p.key).includes(HOST) || String(p.str || "").trim().toLowerCase() === HOST),
+  );
 check(
   "miniapp.domain param",
   !!(domainParam && domainParam.str !== "-"),
