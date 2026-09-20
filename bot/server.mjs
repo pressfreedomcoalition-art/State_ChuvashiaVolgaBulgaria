@@ -8,10 +8,20 @@ const WEBAPP_BASE = String(process.env.WEBAPP_URL || "https://chv.blc.cab/").tri
 const WEBAPP_VERSION = String(process.env.WEBAPP_VERSION || "").trim();
 const BUTTON_TEXT = String(process.env.BUTTON_TEXT || "Открыть гражданство").trim();
 const MENU_BUTTON_TEXT = String(process.env.MENU_BUTTON_TEXT || "Кабинет").trim();
-const START_TEXT = String(
+
+/** Systemd EnvironmentFile treats `\n` as escaped `n` → literal ".n". Use __NL__ in .env. */
+function normalizeStartText(raw) {
+  return String(raw || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/__NL__/g, "\n")
+    .replace(/\\n/g, "\n")
+    .trim();
+}
+
+const START_TEXT = normalizeStartText(
   process.env.START_TEXT ||
     "Кабинет гражданина Чувашии / Волжской Булгарии.\nНажмите кнопку, чтобы открыть миниапп.",
-).replace(/\\n/g, "\n");
+);
 
 function resolveWebAppUrl(base, version) {
   try {

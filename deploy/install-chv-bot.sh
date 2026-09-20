@@ -31,7 +31,7 @@ TELEGRAM_BOT_TOKEN=${token}
 WEBAPP_URL=${WEBAPP_URL}
 BUTTON_TEXT=${BUTTON_TEXT}
 MENU_BUTTON_TEXT=${MENU_BUTTON_TEXT}
-START_TEXT=Кабинет гражданина Чувашии / Волжской Булгарии.\\nНажмите кнопку, чтобы открыть миниапп.
+START_TEXT=Кабинет гражданина Чувашии / Волжской Булгарии.__NL__Нажмите кнопку, чтобы открыть миниапп.
 EOF
   chown www-data:www-data "$DEST/.env"
   chmod 600 "$DEST/.env"

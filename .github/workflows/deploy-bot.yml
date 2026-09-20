@@ -60,7 +60,7 @@ jobs:
             printf 'WEBAPP_VERSION=%s\n' '${{ github.sha }}'
             printf 'BUTTON_TEXT=%s\n' 'Открыть государство'
             printf 'MENU_BUTTON_TEXT=%s\n' 'DAO'
-            printf 'START_TEXT=%s\n' 'Чувашия / Волжская Булгария — официальный миниапп государства.\nНажмите кнопку, чтобы открыть https://chv.blc.cab'
+            printf 'START_TEXT=%s\n' 'Кабинет гражданина Чувашии / Волжской Булгарии.__NL__Нажмите кнопку, чтобы открыть миниапп.'
           } >"$TMP/chv-bot.env"
           printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
 
