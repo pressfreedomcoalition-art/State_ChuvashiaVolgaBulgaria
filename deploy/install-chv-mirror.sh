@@ -162,8 +162,9 @@ if [[ -f "/etc/letsencrypt/live/${SITE}/fullchain.pem" ]]; then
   fi
 
   if nginx -t; then
-    systemctl reload nginx
-    echo "HTTPS mirror enabled for ${SITE}"
+    # reload does not always rebind IP:443 when competing with miniapp — full restart
+    systemctl restart nginx
+    echo "HTTPS mirror enabled for ${SITE} (nginx restarted)"
   else
     echo "TLS conf failed nginx -t; dumping conf:" >&2
     cat "/etc/nginx/sites-available/${SITE}.conf" >&2 || true
@@ -185,12 +186,19 @@ probe_sni "127.0.0.1:443"
 echo "TLS peer SNI chv → ${PUBLIC_IP}:443:"
 PEER="$(probe_sni "${PUBLIC_IP}:443")"
 echo "$PEER"
+echo "TLS peer SNI miniapp → ${PUBLIC_IP}:443 (control):"
+echo | openssl s_client -connect "${PUBLIC_IP}:443" -servername miniapp.blc.cab 2>/dev/null \
+  | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true
+
 if ! echo "$PEER" | grep -q "DNS:chv.blc.cab\|CN *= *chv.blc.cab\|CN=chv.blc.cab"; then
   echo "ERROR: SNI chv.blc.cab is not presenting chv.blc.cab cert" >&2
-  echo "==== nginx -T ssl excerpt" >&2
-  nginx -T 2>/dev/null | grep -nE "server_name|listen .*443|ssl_certificate " | head -120 >&2 || true
-  echo "==== listen 443" >&2
-  ss -lntp | grep ':443' >&2 || true
+  echo "==== nginx -T server blocks excerpt" >&2
+  nginx -T 2>/dev/null | awk '
+    /server_name chv.blc.cab|server_name miniapp.blc.cab|listen .*:443|ssl_certificate / {
+      print NR ":" $0
+    }' | head -160 >&2 || true
+  echo "==== curl resolve local" >&2
+  curl -vk --resolve "chv.blc.cab:443:127.0.0.1" "https://chv.blc.cab/" -o /dev/null 2>&1 | head -40 >&2 || true
   exit 1
 fi
 
