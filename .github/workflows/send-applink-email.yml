@@ -1,6 +1,6 @@
 name: Send AppLink listing email
 
-# One-shot: email hello@miniapplink.online from the CHV VPS.
+# Email hello@miniapplink.online from the CHV VPS (direct SMTP to MX).
 on:
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.NEW_SSH }}
 
-      - name: Send listing email from VPS
+      - name: Send listing email from VPS (direct MX)
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -34,61 +34,69 @@ jobs:
           "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'REMOTE'
           set -euo pipefail
           SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
-          cleanup() { rm -f /tmp/chv-sudo.pass /tmp/_applink-email-chv.txt /tmp/applink-body.txt /tmp/applink.eml; }
+          cleanup() { rm -f /tmp/chv-sudo.pass /tmp/_applink-email-chv.txt /tmp/send_applink.py /tmp/applink-body.txt; }
           trap cleanup EXIT
 
-          export DEBIAN_FRONTEND=noninteractive
-          if ! command -v sendmail >/dev/null 2>&1; then
-            SUDO apt-get update -qq
-            SUDO apt-get install -y -qq mailutils postfix
+          # Drop broken bounce queue from earlier postfix attempts
+          if command -v postsuper >/dev/null 2>&1; then
+            SUDO postsuper -d ALL || true
           fi
-
-          # Fix broken noninteractive postfix install (missing mailname → deferred).
-          echo 'chv.blc.cab' | SUDO tee /etc/mailname >/dev/null
-          SUDO postconf -e "myhostname=chv.blc.cab"
-          SUDO postconf -e "mydomain=chv.blc.cab"
-          SUDO postconf -e "myorigin=/etc/mailname"
-          SUDO postconf -e "inet_interfaces=loopback-only"
-          SUDO postconf -e "inet_protocols=ipv4"
-          SUDO systemctl reload postfix || SUDO systemctl restart postfix
-          SUDO postsuper -d ALL || true
 
           BODY=$(awk 'NR==1 && /^To:/{next} NR==2 && /^Subject:/{next} NR==3 && /^$/{next} {print}' /tmp/_applink-email-chv.txt)
           printf '%s\n' "$BODY" > /tmp/applink-body.txt
 
-          FROM='catalog@chv.blc.cab'
-          SUBJECT='List Mini App: CHV DAO Cabinet (@bulgaria_state_bot)'
-          TO='hello@miniapplink.online'
+          cat > /tmp/send_applink.py <<'PY'
+          #!/usr/bin/env python3
+          import socket
+          import smtplib
+          import sys
+          from email.message import EmailMessage
+          from pathlib import Path
 
-          echo "mailer: sendmail=$(command -v sendmail)"
-          echo "from=$FROM to=$TO"
+          TO = "hello@miniapplink.online"
+          FROM_addr = "catalog@chv.blc.cab"
+          subject = "List Mini App: CHV DAO Cabinet (@bulgaria_state_bot)"
+          body = Path("/tmp/applink-body.txt").read_text(encoding="utf-8")
 
-          {
-            printf 'From: CHV Catalog <%s>\n' "$FROM"
-            printf 'To: %s\n' "$TO"
-            printf 'Reply-To: %s\n' 'catalog@chv.blc.cab'
-            printf 'Subject: %s\n' "$SUBJECT"
-            printf 'MIME-Version: 1.0\n'
-            printf 'Content-Type: text/plain; charset=UTF-8\n'
-            printf 'Content-Transfer-Encoding: 8bit\n'
-            printf '\n'
-            cat /tmp/applink-body.txt
-          } | sendmail -t -v 2>&1 | tee /tmp/applink-send.log
+          msg = EmailMessage()
+          msg["From"] = f"CHV Catalog <{from_addr}>"
+          msg["To"] = TO
+          msg["Reply-To"] = from_addr
+          msg["Subject"] = subject
+          msg.set_content(body)
 
-          sleep 8
-          echo "=== mailq ==="
-          SUDO mailq || true
-          echo "=== mail.log tail ==="
-          SUDO journalctl -u postfix -n 30 --no-pager || true
+          # MX name has no A record (NXDOMAIN); SPF advertises the real MTA IP.
+          hosts = ["144.124.251.27", "mail.miniapplink.online"]
+          print(f"hosts={hosts}", flush=True)
 
-          if SUDO mailq 2>/dev/null | grep -qi 'Mail queue is empty'; then
-            echo "queue_empty_ok"
-          elif SUDO journalctl -u postfix -n 40 --no-pager 2>/dev/null | grep -E "to=<${TO}>.*status=sent"; then
-            echo "delivered_ok"
-          elif SUDO journalctl -u postfix -n 40 --no-pager 2>/dev/null | grep -E "to=<${TO}>.*(deferred|bounced|reject)"; then
-            echo "::error::Mail deferred/bounced — DO may block port 25"
-            exit 1
-          else
-            echo "queued_or_unknown — check logs above"
-          fi
+          last_err = None
+          for host in hosts:
+            for port in (25, 587, 465):
+              try:
+                print(f"try {host}:{port}", flush=True)
+                if port == 465:
+                  with smtplib.SMTP_SSL(host, port, timeout=25) as s:
+                    s.ehlo("chv.blc.cab")
+                    s.send_message(msg)
+                else:
+                  with smtplib.SMTP(host, port, timeout=25) as s:
+                    s.ehlo("chv.blc.cab")
+                    if port == 587:
+                      try:
+                        s.starttls()
+                        s.ehlo("chv.blc.cab")
+                      except smtplib.SMTPException as e:
+                        print(f"starttls_skip: {e}", flush=True)
+                    s.send_message(msg)
+                print(f"SENT via {host}:{port}", flush=True)
+                sys.exit(0)
+              except Exception as e:
+                last_err = e
+                print(f"fail {host}:{port}: {type(e).__name__}: {e}", flush=True)
+
+          print(f"ALL_FAILED last={last_err}", flush=True)
+          sys.exit(1)
+          PY
+
+          python3 /tmp/send_applink.py
           REMOTE
