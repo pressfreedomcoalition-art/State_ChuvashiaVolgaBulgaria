@@ -59,7 +59,7 @@ FindMini и часть каталогов **режут politics**. Не писа
 | **TG.app** | Нужен Log In with Telegram (`@bulcoin_blc`) — руки | — |
 | **miniapps.me** | Sign in with Telegram — руки | — |
 | **miniapps.store** | Пропуск (платное / низкий ROI) | — |
-| **AppLink Store** | Письмо готово: `docs/_applink-email-chv.txt` — отправить | — |
+| **AppLink Store** | Письмо отправлено на `hello@miniapplink.online` (SMTPS `144.124.251.27:465`, Exim id `1x9L9l-002CzP-N3`; MX-имя у них NXDOMAIN) | 2026-09-23 |
 | **Telegram Apps Center** (`@app_moderation_bot`) | Нужен Analytics SDK на миниаппе — пауза | — |
 | **TGFind** | Публичной submit-формы нет | — |
 | **coolpac catalog** | PR [#4](https://github.com/coolpac/telegram-mini-apps-catalog/pull/4) | 2026-09-23 |
