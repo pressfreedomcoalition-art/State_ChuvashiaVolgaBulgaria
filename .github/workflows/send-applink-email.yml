@@ -1,0 +1,89 @@
+name: Send AppLink listing email
+
+# One-shot: email hello@miniapplink.online from the CHV VPS.
+on:
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.NEW_SSH }}
+
+      - name: Send listing email from VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          NEW_PASS: ${{ secrets.NEW_PASS }}
+        run: |
+          set -euo pipefail
+          HOST="${SSH_HOST:?}"
+          USER_="${SSH_USER:?}"
+          PORT="${SSH_PORT:-22}"
+          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+          SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+
+          printf '%s\n' "$NEW_PASS" > /tmp/chv-sudo.pass
+          "${SCP[@]}" docs/_applink-email-chv.txt /tmp/chv-sudo.pass "${USER_}@${HOST}:/tmp/"
+
+          "${SSH[@]}" "${USER_}@${HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          SUDO() { sudo -S -p '' "$@" < /tmp/chv-sudo.pass; }
+          cleanup() { rm -f /tmp/chv-sudo.pass /tmp/_applink-email-chv.txt /tmp/applink-body.txt /tmp/applink.eml; }
+          trap cleanup EXIT
+
+          # Ensure a local MTA can speak SMTP (DO often blocks 25 — try submission too).
+          if ! command -v sendmail >/dev/null 2>&1 && ! command -v mail >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            SUDO apt-get update -qq
+            SUDO apt-get install -y -qq mailutils postfix 2>/dev/null || \
+              SUDO apt-get install -y -qq msmtp msmtp-mta bsd-mailx || true
+          fi
+
+          BODY=$(awk 'NR==1 && /^To:/{next} NR==2 && /^Subject:/{next} NR==3 && /^$/{next} {print}' /tmp/_applink-email-chv.txt)
+          printf '%s\n' "$BODY" > /tmp/applink-body.txt
+
+          FROM="catalog@$(hostname -f 2>/dev/null || hostname)"
+          # Prefer a project-looking From if reverse DNS is ugly
+          case "$FROM" in
+            catalog@*|catalog@localhost*) FROM="catalog@chv.blc.cab" ;;
+          esac
+
+          SUBJECT='List Mini App: CHV DAO Cabinet (@bulgaria_state_bot)'
+          TO='hello@miniapplink.online'
+
+          echo "mailer: sendmail=$(command -v sendmail || true) mail=$(command -v mail || true)"
+          echo "from=$FROM to=$TO"
+
+          sent=0
+          if command -v sendmail >/dev/null 2>&1; then
+            {
+              printf 'From: CHV Catalog <%s>\n' "$FROM"
+              printf 'To: %s\n' "$TO"
+              printf 'Reply-To: %s\n' 'bulcoin.blc@gmail.com'
+              printf 'Subject: %s\n' "$SUBJECT"
+              printf 'MIME-Version: 1.0\n'
+              printf 'Content-Type: text/plain; charset=UTF-8\n'
+              printf 'Content-Transfer-Encoding: 8bit\n'
+              printf '\n'
+              cat /tmp/applink-body.txt
+            } | sendmail -t -v 2>&1 | tee /tmp/applink-send.log
+            sent=1
+          elif command -v mail >/dev/null 2>&1; then
+            mail -a "From: CHV Catalog <$FROM>" -s "$SUBJECT" "$TO" < /tmp/applink-body.txt
+            sent=1
+          fi
+
+          if [[ "$sent" -ne 1 ]]; then
+            echo "::error::No sendmail/mail on VPS"
+            exit 1
+          fi
+
+          echo "sent_ok"
+          tail -n 40 /tmp/applink-send.log 2>/dev/null || true
+          REMOTE
