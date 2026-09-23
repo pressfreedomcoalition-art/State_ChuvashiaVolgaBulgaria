@@ -1,0 +1,27 @@
+To: hello@miniapplink.online
+Subject: List Mini App: CHV DAO Cabinet (@bulgaria_state_bot)
+
+Please list our Telegram Mini App in AppLink Store.
+
+Name: CHV DAO Cabinet
+Bot: https://t.me/bulgaria_state_bot
+Website: https://chv.blc.cab
+Privacy: https://chv.blc.cab/privacy.html
+Contact: @bulcoin_blc
+
+Short: On-chain DAO cabinet on TON: votes and treasury in Telegram.
+
+Full: CHV DAO Cabinet is a Telegram Mini App on TON. Open on-chain votes, manage a shared treasury, and membership — wallet via TON Connect. Same stack as BulCoin DAO.
+
+Category: Web3 / Tools
+TON: yes
+Languages: EN, RU
+
+Screenshots (EN, same stack UI):
+https://dao.blc.cab/pitch/en/01-catalog.png
+https://dao.blc.cab/pitch/en/02-dao-hub.png
+https://dao.blc.cab/pitch/en/03-votings.png
+https://dao.blc.cab/pitch/en/04-create-voting.png
+https://dao.blc.cab/pitch/en/05-treasury.png
+
+Topic: partnership / catalog listing
