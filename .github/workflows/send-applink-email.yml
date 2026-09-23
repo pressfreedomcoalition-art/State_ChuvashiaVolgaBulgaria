@@ -10,34 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.NEW_SSH }}
-
-      - name: Send listing email from VPS
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          NEW_PASS: ${{ secrets.NEW_PASS }}
+      # DO VPS blocks outbound SMTP (25/465 timeout). Send from Actions runner instead.
+      - name: Send listing email (Actions runner → AppLink MTA)
         run: |
           set -euo pipefail
-          HOST="${SSH_HOST:?}"
-          USER_="${SSH_USER:?}"
-          PORT="${SSH_PORT:-22}"
-          SSH=(ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
-          SCP=(scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
-
-          # Body without To/Subject headers
           awk 'NR==1 && /^To:/{next} NR==2 && /^Subject:/{next} NR==3 && /^$/{next} {print}' \
             docs/_applink-email-chv.txt > /tmp/applink-body.txt
-
-          printf '%s\n' "$NEW_PASS" > /tmp/chv-sudo.pass
-          "${SCP[@]}" \
-            /tmp/applink-body.txt \
-            scripts/send-applink-email.py \
-            /tmp/chv-sudo.pass \
-            "${USER_}@${HOST}:/tmp/"
-
-          "${SSH[@]}" "${USER_}@${HOST}" \
-            'rm -f /tmp/chv-sudo.pass; python3 /tmp/send-applink-email.py /tmp/applink-body.txt; ec=$?; rm -f /tmp/applink-body.txt /tmp/send-applink-email.py; exit $ec'
+          python3 scripts/send-applink-email.py /tmp/applink-body.txt
