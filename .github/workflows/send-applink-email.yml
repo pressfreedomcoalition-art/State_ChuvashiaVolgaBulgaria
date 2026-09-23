@@ -37,53 +37,58 @@ jobs:
           cleanup() { rm -f /tmp/chv-sudo.pass /tmp/_applink-email-chv.txt /tmp/applink-body.txt /tmp/applink.eml; }
           trap cleanup EXIT
 
-          # Ensure a local MTA can speak SMTP (DO often blocks 25 — try submission too).
-          if ! command -v sendmail >/dev/null 2>&1 && ! command -v mail >/dev/null 2>&1; then
-            export DEBIAN_FRONTEND=noninteractive
+          export DEBIAN_FRONTEND=noninteractive
+          if ! command -v sendmail >/dev/null 2>&1; then
             SUDO apt-get update -qq
-            SUDO apt-get install -y -qq mailutils postfix 2>/dev/null || \
-              SUDO apt-get install -y -qq msmtp msmtp-mta bsd-mailx || true
+            SUDO apt-get install -y -qq mailutils postfix
           fi
+
+          # Fix broken noninteractive postfix install (missing mailname → deferred).
+          echo 'chv.blc.cab' | SUDO tee /etc/mailname >/dev/null
+          SUDO postconf -e "myhostname=chv.blc.cab"
+          SUDO postconf -e "mydomain=chv.blc.cab"
+          SUDO postconf -e "myorigin=/etc/mailname"
+          SUDO postconf -e "inet_interfaces=loopback-only"
+          SUDO postconf -e "inet_protocols=ipv4"
+          SUDO systemctl reload postfix || SUDO systemctl restart postfix
+          SUDO postsuper -d ALL || true
 
           BODY=$(awk 'NR==1 && /^To:/{next} NR==2 && /^Subject:/{next} NR==3 && /^$/{next} {print}' /tmp/_applink-email-chv.txt)
           printf '%s\n' "$BODY" > /tmp/applink-body.txt
 
-          FROM="catalog@$(hostname -f 2>/dev/null || hostname)"
-          # Prefer a project-looking From if reverse DNS is ugly
-          case "$FROM" in
-            catalog@*|catalog@localhost*) FROM="catalog@chv.blc.cab" ;;
-          esac
-
+          FROM='catalog@chv.blc.cab'
           SUBJECT='List Mini App: CHV DAO Cabinet (@bulgaria_state_bot)'
           TO='hello@miniapplink.online'
 
-          echo "mailer: sendmail=$(command -v sendmail || true) mail=$(command -v mail || true)"
+          echo "mailer: sendmail=$(command -v sendmail)"
           echo "from=$FROM to=$TO"
 
-          sent=0
-          if command -v sendmail >/dev/null 2>&1; then
-            {
-              printf 'From: CHV Catalog <%s>\n' "$FROM"
-              printf 'To: %s\n' "$TO"
-              printf 'Reply-To: %s\n' 'bulcoin.blc@gmail.com'
-              printf 'Subject: %s\n' "$SUBJECT"
-              printf 'MIME-Version: 1.0\n'
-              printf 'Content-Type: text/plain; charset=UTF-8\n'
-              printf 'Content-Transfer-Encoding: 8bit\n'
-              printf '\n'
-              cat /tmp/applink-body.txt
-            } | sendmail -t -v 2>&1 | tee /tmp/applink-send.log
-            sent=1
-          elif command -v mail >/dev/null 2>&1; then
-            mail -a "From: CHV Catalog <$FROM>" -s "$SUBJECT" "$TO" < /tmp/applink-body.txt
-            sent=1
-          fi
+          {
+            printf 'From: CHV Catalog <%s>\n' "$FROM"
+            printf 'To: %s\n' "$TO"
+            printf 'Reply-To: %s\n' 'catalog@chv.blc.cab'
+            printf 'Subject: %s\n' "$SUBJECT"
+            printf 'MIME-Version: 1.0\n'
+            printf 'Content-Type: text/plain; charset=UTF-8\n'
+            printf 'Content-Transfer-Encoding: 8bit\n'
+            printf '\n'
+            cat /tmp/applink-body.txt
+          } | sendmail -t -v 2>&1 | tee /tmp/applink-send.log
 
-          if [[ "$sent" -ne 1 ]]; then
-            echo "::error::No sendmail/mail on VPS"
+          sleep 8
+          echo "=== mailq ==="
+          SUDO mailq || true
+          echo "=== mail.log tail ==="
+          SUDO journalctl -u postfix -n 30 --no-pager || true
+
+          if SUDO mailq 2>/dev/null | grep -qi 'Mail queue is empty'; then
+            echo "queue_empty_ok"
+          elif SUDO journalctl -u postfix -n 40 --no-pager 2>/dev/null | grep -E "to=<${TO}>.*status=sent"; then
+            echo "delivered_ok"
+          elif SUDO journalctl -u postfix -n 40 --no-pager 2>/dev/null | grep -E "to=<${TO}>.*(deferred|bounced|reject)"; then
+            echo "::error::Mail deferred/bounced — DO may block port 25"
             exit 1
+          else
+            echo "queued_or_unknown — check logs above"
           fi
-
-          echo "sent_ok"
-          tail -n 40 /tmp/applink-send.log 2>/dev/null || true
           REMOTE
