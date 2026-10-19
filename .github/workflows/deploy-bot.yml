@@ -58,9 +58,9 @@ jobs:
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'WEBAPP_URL=%s\n' 'https://chv.blc.cab/'
             printf 'WEBAPP_VERSION=%s\n' '${{ github.sha }}'
-            printf 'BUTTON_TEXT=%s\n' 'Открыть государство'
-            printf 'MENU_BUTTON_TEXT=%s\n' 'DAO'
-            printf 'START_TEXT=%s\n' 'Кабинет гражданина Чувашии / Волжской Булгарии. Нажмите кнопку, чтобы открыть миниапп.'
+            printf 'BUTTON_TEXT=%s\n' 'Открыть гражданство'
+            printf 'MENU_BUTTON_TEXT=%s\n' 'Кабинет'
+            # START_TEXT is hardcoded in bot/startText.mjs (systemd mangled \n → ".n")
           } >"$TMP/chv-bot.env"
           printf '%s\n' "$NEW_PASS" >"$TMP/chv-sudo.pass"
 
@@ -91,4 +91,24 @@ jobs:
           sleep 2
           SUDO systemctl --no-pager -l is-active chv-bot.service
           SUDO systemctl --no-pager -l status chv-bot.service | head -20
+          # Unit test + resolve text with the same EnvironmentFile the service uses
+          SUDO bash -c 'cd /opt/chv-bot && node --test startText.test.mjs'
+          SUDO bash -c 'cd /opt/chv-bot && set -a && . ./.env && set +a && node --input-type=module -e "
+            import { resolveStartText } from \"./startText.mjs\";
+            const t = resolveStartText(process.env.START_TEXT);
+            if (!t.includes(\"\\n\") || /\\.n\\S/.test(t)) {
+              console.error(\"BAD\", JSON.stringify(t));
+              process.exit(1);
+            }
+            console.log(\"ok\", JSON.stringify(t));
+          "'
+          LINE="$(SUDO journalctl -u chv-bot -n 50 --no-pager -o cat | grep -F 'start_text=' | tail -1 || true)"
+          echo "boot: $LINE"
+          case "$LINE" in
+            *'\\nНажмите'*) ;;
+            *) echo '::error::start_text log missing \\n before Нажмите'; exit 1 ;;
+          esac
+          case "$LINE" in
+            *'.nН'*) echo '::error::start_text still has literal .nН'; exit 1 ;;
+          esac
           REMOTE

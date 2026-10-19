@@ -31,8 +31,8 @@ TELEGRAM_BOT_TOKEN=${token}
 WEBAPP_URL=${WEBAPP_URL}
 BUTTON_TEXT=${BUTTON_TEXT}
 MENU_BUTTON_TEXT=${MENU_BUTTON_TEXT}
-START_TEXT=Кабинет гражданина Чувашии / Волжской Булгарии. Нажмите кнопку, чтобы открыть миниапп.
 EOF
+  # START_TEXT is hardcoded in bot/startText.mjs — never put \n into EnvironmentFile.
   chown www-data:www-data "$DEST/.env"
   chmod 600 "$DEST/.env"
 }

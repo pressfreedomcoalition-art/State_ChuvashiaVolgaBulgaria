@@ -2,28 +2,16 @@
  * Minimal Telegram bot for @bulgaria_state_bot:
  * /start → Web App button that opens the CHV cabinet miniapp.
  */
+import { resolveStartText } from "./startText.mjs";
+
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const WEBAPP_BASE = String(process.env.WEBAPP_URL || "https://chv.blc.cab/").trim();
 /** Bump / set on deploy so Telegram WebView does not keep a stale Mini App shell. */
 const WEBAPP_VERSION = String(process.env.WEBAPP_VERSION || "").trim();
 const BUTTON_TEXT = String(process.env.BUTTON_TEXT || "Открыть гражданство").trim();
 const MENU_BUTTON_TEXT = String(process.env.MENU_BUTTON_TEXT || "Кабинет").trim();
-
-/** Systemd EnvironmentFile treats `\n` as escaped `n` → literal ".n". Prefer one line or __NL__. */
-function normalizeStartText(raw) {
-  return String(raw || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/__NL__/g, "\n")
-    .replace(/\\n/g, "\n")
-    // already mangled by systemd: "…Булгарии.nНажмите…" → real newline
-    .replace(/\.n(?=[А-ЯЁA-Z])/g, ".\n")
-    .trim();
-}
-
-const START_TEXT = normalizeStartText(
-  process.env.START_TEXT ||
-    "Кабинет гражданина Чувашии / Волжской Булгарии. Нажмите кнопку, чтобы открыть миниапп.",
-);
+/** Copy lives in startText.mjs — do not put `\n` into systemd EnvironmentFile. */
+const START_TEXT = resolveStartText(process.env.START_TEXT);
 
 function resolveWebAppUrl(base, version) {
   try {
@@ -128,6 +116,11 @@ process.on("SIGTERM", () => {
 });
 
 console.log(`chv-bot → ${WEBAPP_URL} (${BUTTON_TEXT})`);
+console.log(`chv-bot start_text=${JSON.stringify(START_TEXT)}`);
+if (/\.n\S/.test(START_TEXT) || !START_TEXT.includes("\n")) {
+  console.error("chv-bot: START_TEXT must include a real newline and no literal .n");
+  process.exit(1);
+}
 await tg("deleteWebhook", { drop_pending_updates: false });
 await setupMenu();
 await poll();
