@@ -104,11 +104,12 @@ jobs:
           "'
           LINE="$(SUDO journalctl -u chv-bot -n 50 --no-pager -o cat | grep -F 'start_text=' | tail -1 || true)"
           echo "boot: $LINE"
-          case "$LINE" in
-            *'\\nНажмите'*) ;;
-            *) echo '::error::start_text log missing \\n before Нажмите'; exit 1 ;;
-          esac
-          case "$LINE" in
-            *'.nН'*) echo '::error::start_text still has literal .nН'; exit 1 ;;
-          esac
+          # JSON.stringify logs a real newline as the two chars \ + n
+          node -e '
+            const line = process.argv[1] || "";
+            if (!line.includes("start_text=")) { console.error("no start_text in journal"); process.exit(1); }
+            if (!line.includes("\\nНажмите")) { console.error("missing \\\\n before Нажмите:", line); process.exit(1); }
+            if (/\.nН/.test(line)) { console.error("literal .nН still present:", line); process.exit(1); }
+            console.log("journal start_text ok");
+          ' "$LINE"
           REMOTE
